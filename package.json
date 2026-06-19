@@ -4,8 +4,11 @@
   "description": "Sentinel automated PR auditor and memory prediction engine MVP",
   "main": "src/index.ts",
   "scripts": {
+    "build:assets": "node scripts/build_assets.js",
+    "typecheck": "tsc --noEmit",
+    "test": "npm run build:assets && npm run typecheck",
     "dev": "wrangler dev",
-    "deploy": "wrangler deploy",
+    "deploy": "npm run build:assets && wrangler deploy",
     "db:migrate:local": "wrangler d1 execute sentinel-db --local --file=./db/schema.sql",
     "db:migrate:remote": "wrangler d1 execute sentinel-db --remote --file=./db/schema.sql"
   },

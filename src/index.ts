@@ -1,8 +1,8 @@
 // src/index.ts
 
 import { DbHelper } from './db';
-import { runDeterministicChecks, applyPenalties, RuleHit } from './rules';
-import { ParcleClient, PatternMemory } from './parcle';
+import { runDeterministicChecks, applyPenalties } from './rules';
+import { ParcleClient } from './parcle';
 import { GroqEngine } from './groq';
 import { GitHubClient, verifyWebhookSignature, buildPRComment, buildPatternMatchSection } from './github';
 
@@ -111,10 +111,10 @@ export default {
         // Recall memories for the rule hits to display in dashboard pattern-match panel
         const parcle = new ParcleClient(env.PARCLE_API_KEY || null, env.DB);
         const patternMatches = await Promise.all(
-          hits.map(h => parcle.recallByPattern(h.rule_id, `${owner}/${name}`))
+          hits.map(h => parcle.recallByPattern(h.rule_id, `${owner}/${name}`, 4, prNumber))
         );
         const matchedHistory = hits.map((h, i) => ({
-          hit: h,
+          hit: { id: h.rule_id, title: h.title },
           memories: patternMatches[i]
         })).filter(m => m.memories.length > 0);
 
@@ -328,8 +328,16 @@ async function runAuditLoop(payload: any, env: Env) {
     await db.updateRepoScore(repository.id, overallScore);
 
     // 10. Store patterns back in Memory (Recall -> Reason -> Store loop)
+    for (const hit of hits) {
+      await parcle.storePattern(
+        `[PR #${prNumber}] Deterministic rule hit: "${hit.title}" in ${repoFullName}. ${hit.description}`,
+        hit.id,
+        repoFullName,
+        { prNumber, tags: [hit.dimension] }
+      );
+    }
+
     for (const risk of analysis.risks) {
-      // Store in memory tagged with pattern_id and repo name
       await parcle.storePattern(
         `[PR #${prNumber}] Detected ${risk.severity} risk: "${risk.title}" in ${risk.location}. ${risk.why}`,
         risk.id,

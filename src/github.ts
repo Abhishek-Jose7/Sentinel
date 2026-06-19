@@ -5,6 +5,8 @@ import { RuleHit } from './rules';
 import { Risk } from './groq';
 import { PatternMemory } from './parcle';
 
+type PatternMatchHit = Pick<RuleHit, 'id' | 'title'>;
+
 export async function verifyWebhookSignature(body: string, signature: string, secret: string): Promise<boolean> {
   if (!signature || !secret) return false;
   const encoder = new TextEncoder();
@@ -20,6 +22,7 @@ export async function verifyWebhookSignature(body: string, signature: string, se
   const parts = signature.split('=');
   if (parts.length !== 2 || parts[0] !== 'sha256') return false;
   const hex = parts[1];
+  if (!/^[0-9a-f]+$/i.test(hex) || hex.length % 2 !== 0) return false;
   const bytes = new Uint8Array(hex.match(/.{1,2}/g)!.map(b => parseInt(b, 16)));
   const bodyBytes = encoder.encode(body);
   
@@ -308,11 +311,11 @@ ${risk.why}
 
 // Generates the pattern match Markdown section
 export function buildPatternMatchSection(
-  matchedHistory: Array<{ hit: RuleHit; memories: PatternMemory[] }>
+  matchedHistory: Array<{ hit: PatternMatchHit; memories: PatternMemory[] }>
 ): string {
   if (!matchedHistory.length) return '';
   const blocks = matchedHistory.map(({ hit, memories }) => {
-    const memoryBlocks = memories.map(m => `> ${m.content}`).join('\n');
+    const memoryBlocks = memories.map(m => `> ${m.content.replace(/\n/g, '\n> ')}`).join('\n');
     return `**${hit.title}** in this PR matches a stored pattern (\`${hit.id}\`):\n${memoryBlocks}`;
   });
   return `### 🧠 Pattern Match\n\n${blocks.join('\n\n')}\n\n---\n`;
@@ -340,7 +343,7 @@ export function buildPRComment(
     
     let notes = '-';
     if (hits.length > 0) {
-      notes = `capped by: ` + hits.map(h => `${h.title} (-${h.penalty})`).join(', ');
+      notes = `capped by: ` + hits.map(h => `${h.id} (-${h.penalty})`).join(', ');
     }
     return `| **${name}** | ${score}/100 | ${notes} |`;
   }).join('\n');

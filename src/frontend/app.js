@@ -38,6 +38,22 @@ document.addEventListener('DOMContentLoaded', () => {
   // 1. Initial Load
   init();
 
+  function escapeHtml(value) {
+    return String(value ?? '').replace(/[&<>"']/g, char => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    })[char]);
+  }
+
+  function clampScore(value) {
+    const numeric = Number(value);
+    if (!Number.isFinite(numeric)) return 0;
+    return Math.max(0, Math.min(100, numeric));
+  }
+
   function init() {
     loadRepositories();
     setupEventListeners();
@@ -171,19 +187,20 @@ document.addEventListener('DOMContentLoaded', () => {
       const isActive = activeId ? repo.id === activeId : (state.selectedRepo && repo.id === state.selectedRepo.id);
       li.className = `repo-item ${isActive ? 'active' : ''}`;
       
-      const proBadge = repo.is_pro ? '<span style="font-size: 8px; color: var(--accent-pro); margin-left: 4px;">[PRO]</span>' : '';
+      const proBadge = repo.is_pro ? '<span class="repo-pro-badge">PRO</span>' : '';
+      const repoScore = clampScore(repo.current_score);
       
       // Select score classification
       let scoreClass = 'high';
-      if (repo.current_score < 70) scoreClass = 'low';
-      else if (repo.current_score < 85) scoreClass = 'med';
+      if (repoScore < 70) scoreClass = 'low';
+      else if (repoScore < 85) scoreClass = 'med';
 
       li.innerHTML = `
         <div class="repo-icon">📦</div>
         <div class="repo-details">
-          <div class="repo-name">${repo.owner}/${repo.name} ${proBadge}</div>
+          <div class="repo-name">${escapeHtml(repo.owner)}/${escapeHtml(repo.name)} ${proBadge}</div>
         </div>
-        <div class="repo-score ${scoreClass}">${repo.current_score}/100</div>
+        <div class="repo-score ${scoreClass}">${repoScore}/100</div>
       `;
 
       li.addEventListener('click', () => {
@@ -233,7 +250,7 @@ document.addEventListener('DOMContentLoaded', () => {
     state.pullRequests.forEach(pr => {
       const opt = document.createElement('option');
       opt.value = pr.pr_number;
-      opt.text = `PR #${pr.pr_number} - Score: ${pr.overall_score}`;
+      opt.text = `PR #${pr.pr_number} - Score: ${clampScore(pr.overall_score)}`;
       if (state.selectedPR && pr.pr_number === state.selectedPR.pr_number) {
         opt.selected = true;
       }
@@ -245,7 +262,7 @@ document.addEventListener('DOMContentLoaded', () => {
     const { pr, ruleHits, risks, patternMatches } = data;
     
     // 1. Overall Score Ring Gauge
-    const score = pr.overall_score;
+    const score = clampScore(pr.overall_score);
     el.scoreValue.textContent = score;
     
     const circumference = 314; // 2 * pi * r (r=50)
@@ -277,11 +294,11 @@ document.addEventListener('DOMContentLoaded', () => {
     const criticalCount = risks.filter(r => r.severity === 'critical').length;
     const warningCount = risks.filter(r => r.severity === 'warning').length;
     
-    let summaryText = `Sentinel evaluated this PR changes and calculated a posture score of **${score}/100**. `;
+    let summaryText = `Sentinel evaluated these PR changes and calculated a posture score of <strong>${score}/100</strong>. `;
     if (criticalCount > 0) {
-      summaryText += `Our reasoning engine predicted **${criticalCount} critical risk(s)** that could cause production instability. `;
+      summaryText += `The reasoning engine predicted <strong>${criticalCount} critical risk(s)</strong> that could cause production instability. `;
     } else if (warningCount > 0) {
-      summaryText += `We identified **${warningCount} minor warnings** within the PR diff. `;
+      summaryText += `Sentinel identified <strong>${warningCount} warning(s)</strong> within the PR diff. `;
     } else {
       summaryText += `No significant risks were predicted in the code changes. `;
     }
@@ -300,18 +317,18 @@ document.addEventListener('DOMContentLoaded', () => {
 
     el.dimensionsContainer.innerHTML = '';
     dims.forEach(d => {
-      const scoreVal = pr[`${d.key}_score`] !== undefined ? pr[`${d.key}_score`] : 100;
+      const scoreVal = pr[`${d.key}_score`] !== undefined ? clampScore(pr[`${d.key}_score`]) : 100;
       const dimCard = document.createElement('div');
       dimCard.className = 'card dimension-card';
       
       const hits = ruleHits.filter(h => h.dimension === d.key);
       const notesHtml = hits.length > 0
-        ? hits.map(h => `<div class="note-hit">⚠️ ${h.title} (-${h.penalty})</div>`).join('')
+        ? hits.map(h => `<div class="note-hit">⚠️ ${escapeHtml(h.rule_id || h.title)} (-${escapeHtml(h.penalty)})</div>`).join('')
         : '<div class="note-none">Verified (no penalties)</div>';
 
       dimCard.innerHTML = `
         <div class="dim-header">
-          <span class="dim-name">${d.name}</span>
+          <span class="dim-name">${escapeHtml(d.name)}</span>
           <span class="dim-score">${scoreVal}/100</span>
         </div>
         <div class="dim-bar-wrapper">
@@ -331,14 +348,15 @@ document.addEventListener('DOMContentLoaded', () => {
     } else {
       risks.forEach(risk => {
         const item = document.createElement('div');
+        const severity = ['critical', 'warning', 'info'].includes(risk.severity) ? risk.severity : 'warning';
         item.className = 'risk-item';
         item.innerHTML = `
           <div class="risk-item-header">
-            <span class="risk-title">${risk.title}</span>
-            <span class="risk-severity ${risk.severity}">${risk.severity}</span>
+            <span class="risk-title">${escapeHtml(risk.title)}</span>
+            <span class="risk-severity ${severity}">${severity}</span>
           </div>
-          <div class="risk-location">${risk.location}</div>
-          <div class="risk-why">${risk.why}</div>
+          <div class="risk-location">${escapeHtml(risk.location)}</div>
+          <div class="risk-why">${escapeHtml(risk.why)}</div>
         `;
         el.risksList.appendChild(item);
       });
@@ -387,10 +405,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
         item.innerHTML = `
           <div class="memory-match-header">
-            Inciting Pattern: <strong>${hit.title}</strong> (${prRef}, ${dateStr})
+            Inciting Pattern: <strong>${escapeHtml(hit.title)}</strong> (${escapeHtml(prRef)}, ${escapeHtml(dateStr)})
           </div>
           <div class="memory-match-text">
-            ${m.content}
+            ${escapeHtml(m.content)}
           </div>
         `;
         el.memoriesPanel.appendChild(item);

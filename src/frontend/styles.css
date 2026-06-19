@@ -147,6 +147,13 @@ h1, h2, h3, h4 {
   white-space: nowrap;
 }
 
+.repo-pro-badge {
+  color: var(--accent-pro);
+  font-size: 9px;
+  font-weight: 700;
+  margin-left: 4px;
+}
+
 .repo-item .repo-score {
   font-size: 12px;
   font-weight: 600;
@@ -883,4 +890,61 @@ h1, h2, h3, h4 {
   font-size: 13px;
   text-align: center;
   padding: 20px 0;
+}
+
+@media (max-width: 1100px) {
+  .app-container {
+    grid-template-columns: 220px 1fr;
+  }
+
+  .dashboard-main {
+    padding: 28px;
+  }
+
+  .top-header,
+  .header-actions {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .overview-grid,
+  .analysis-columns {
+    grid-template-columns: 1fr;
+  }
+
+  .dimensions-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+}
+
+@media (max-width: 760px) {
+  .app-container {
+    display: block;
+  }
+
+  .sidebar {
+    height: auto;
+    position: static;
+  }
+
+  .dashboard-main {
+    height: auto;
+    min-height: 100vh;
+    padding: 20px;
+  }
+
+  .repo-meta,
+  .pr-selector-wrapper {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .repo-meta h2 {
+    font-size: 22px;
+    overflow-wrap: anywhere;
+  }
+
+  .dimensions-grid {
+    grid-template-columns: 1fr;
+  }
 }

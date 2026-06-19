@@ -192,7 +192,16 @@ export class ParcleClient {
     await this.store(content, tags, metadata);
   }
 
-  async recallByPattern(pattern: string, repo: string, limit = 4): Promise<PatternMemory[]> {
-    return this.recall(`pattern:${pattern} repo:${repo}`, limit);
+  async recallByPattern(
+    pattern: string,
+    repo: string,
+    limit = 4,
+    excludePrNumber?: number
+  ): Promise<PatternMemory[]> {
+    const memories = await this.recall(`pattern:${pattern} repo:${repo}`, limit);
+    if (excludePrNumber === undefined) {
+      return memories;
+    }
+    return memories.filter(memory => Number(memory.metadata?.prNumber) !== excludePrNumber);
   }
 }

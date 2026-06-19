@@ -1,0 +1,164 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Sentinel — Enter Pro Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <div class="app-container">
+    
+    <!-- Sidebar -->
+    <aside class="sidebar">
+      <div class="brand">
+        <div class="logo-icon">🛡️</div>
+        <div class="brand-text">
+          <h1>SENTINEL</h1>
+          <span>PR Audit & Memory Engine</span>
+        </div>
+      </div>
+      
+      <div class="sidebar-section">
+        <h2>AUDITED REPOSITORIES</h2>
+        <ul class="repo-list" id="repo-list">
+          <li class="loading-item">Loading repositories...</li>
+        </ul>
+      </div>
+
+      <div class="sidebar-footer">
+        <div class="user-badge">
+          <div class="user-avatar">👤</div>
+          <div class="user-info">
+            <p class="user-name">Developer Admin</p>
+            <p class="user-role">Lead Integration Eng</p>
+          </div>
+        </div>
+      </div>
+    </aside>
+
+    <!-- Main Dashboard Pane -->
+    <main class="dashboard-main" id="dashboard-view" style="display: none;">
+      
+      <!-- Top header bar -->
+      <header class="top-header">
+        <div class="repo-meta">
+          <h2 id="current-repo-title">owner/repo</h2>
+          <span class="badge" id="pro-badge">BASIC</span>
+        </div>
+        
+        <div class="header-actions">
+          <button class="btn btn-pro" id="btn-activate-modal">⚡ Enter Pro</button>
+          
+          <div class="pr-selector-wrapper">
+            <label for="pr-select">Scan History:</label>
+            <select id="pr-select" class="pr-select">
+              <!-- Dynamically populated -->
+            </select>
+          </div>
+        </div>
+      </header>
+
+      <!-- Main Overview Cards Grid -->
+      <section class="overview-grid">
+        
+        <!-- Score Card Ring -->
+        <div class="card score-card">
+          <h3>Overall Health Score</h3>
+          <div class="gauge-container">
+            <svg class="gauge" viewBox="0 0 120 120">
+              <circle class="gauge-bg" cx="60" cy="60" r="50"></circle>
+              <circle class="gauge-fill" id="score-ring" cx="60" cy="60" r="50" stroke-dasharray="314" stroke-dashoffset="314"></circle>
+            </svg>
+            <div class="gauge-value" id="score-value">--</div>
+          </div>
+          <p class="gauge-label" id="score-status">Calculating...</p>
+        </div>
+
+        <!-- Summary & Positioning -->
+        <div class="card summary-card">
+          <h3>Post-Audit Analysis</h3>
+          <p class="pr-title-label" id="selected-pr-title">--</p>
+          <div class="summary-text" id="analysis-summary">
+            Select a repository scan history on the left to see the Sentinel hybrid audit logs.
+          </div>
+          <div class="positioning-bar">
+            <span>🛡️ Posture Verification:</span> "Sentinel audits what can be verified, and predicts what cannot."
+          </div>
+        </div>
+      </section>
+
+      <!-- Scores by Dimension -->
+      <section class="dimensions-section">
+        <h3>Verify — Dimension Postures & Clamping Notes</h3>
+        <div class="dimensions-grid" id="dimensions-container">
+          <!-- Dynamically populated dimensions -->
+        </div>
+      </section>
+
+      <!-- Bottom Columns: Predicted Risks vs Pattern matches -->
+      <div class="analysis-columns">
+        
+        <!-- Reasoning / Predicted Risks -->
+        <section class="analysis-column predictions-col">
+          <h3>Predict — Diff-Level Reasoning</h3>
+          <div class="risks-list" id="risks-list">
+            <!-- Dynamically populated -->
+          </div>
+        </section>
+
+        <!-- Memory Loop / Pattern Match History -->
+        <section class="analysis-column memories-col">
+          <div class="column-header">
+            <h3>🧠 Structured Pattern Memory</h3>
+            <span class="badge badge-memory" id="memory-lock-badge">Pro Locked</span>
+          </div>
+          <div class="memories-panel" id="memories-panel">
+            <div class="empty-state">
+              <p>Activate <strong>Sentinel Pro</strong> to view recurring security matches and historical incident regressions.</p>
+            </div>
+          </div>
+        </section>
+
+      </div>
+    </main>
+
+    <!-- Empty Dashboard State -->
+    <main class="dashboard-main empty-dashboard" id="empty-view">
+      <div class="empty-dashboard-content">
+        <div class="empty-logo">🛡️</div>
+        <h2>Welcome to Sentinel</h2>
+        <p>No audited repositories detected. Install the Sentinel GitHub App to begin scanning your codebase automatically on every pull request push.</p>
+        <div class="mock-setup-box">
+          <h3>🚀 Local MVP Webhook URL</h3>
+          <code>http://localhost:8787/webhook</code>
+          <p class="hint">Point your GitHub webhook payload address here to dispatch scan triggers.</p>
+        </div>
+      </div>
+    </main>
+
+    <!-- Activate Pro Modal -->
+    <div class="modal-overlay" id="pro-modal">
+      <div class="modal">
+        <button class="modal-close" id="btn-close-modal">&times;</button>
+        <div class="modal-icon">⚡</div>
+        <h2>Activate Sentinel Pro</h2>
+        <p>Unlocks the complete <strong>Recall → Reason → Store</strong> memory loop, revealing historical pattern matching and incident prevention timelines.</p>
+        
+        <form id="pro-form" class="pro-form">
+          <div class="form-group">
+            <label for="license-key">Sentinel Pro License Key</label>
+            <input type="text" id="license-key" required placeholder="SENTINEL-PRO-XXXXX-XXXXX" autocomplete="off">
+            <span class="form-error" id="form-error"></span>
+          </div>
+          <button type="submit" class="btn btn-primary btn-block">Activate License</button>
+        </form>
+      </div>
+    </div>
+
+  </div>
+</body>
+</html>

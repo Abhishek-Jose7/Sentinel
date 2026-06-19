@@ -1,0 +1,68 @@
+-- db/schema.sql
+
+-- Repositories registered via GitHub App installation
+CREATE TABLE IF NOT EXISTS repositories (
+  id INTEGER PRIMARY KEY, -- GitHub Repository ID
+  owner TEXT NOT NULL,
+  name TEXT NOT NULL,
+  installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  current_score INTEGER DEFAULT 100,
+  license_key TEXT,
+  is_pro BOOLEAN DEFAULT 0
+);
+
+-- Pull Request scans
+CREATE TABLE IF NOT EXISTS pull_requests (
+  id TEXT PRIMARY KEY, -- owner/repo/pull/number
+  repo_id INTEGER NOT NULL,
+  pr_number INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  state TEXT NOT NULL, -- 'open' | 'closed' | 'merged'
+  overall_score INTEGER DEFAULT 100,
+  security_score INTEGER DEFAULT 100,
+  reliability_score INTEGER DEFAULT 100,
+  observability_score INTEGER DEFAULT 100,
+  performance_score INTEGER DEFAULT 100,
+  deployment_score INTEGER DEFAULT 100,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(repo_id) REFERENCES repositories(id) ON DELETE CASCADE
+);
+
+-- Deterministic Rule Hits
+CREATE TABLE IF NOT EXISTS rule_hits (
+  id TEXT PRIMARY KEY, -- pr_id + rule_id
+  pr_id TEXT NOT NULL,
+  rule_id TEXT NOT NULL,
+  dimension TEXT NOT NULL,
+  penalty INTEGER NOT NULL,
+  title TEXT NOT NULL,
+  description TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(pr_id) REFERENCES pull_requests(id) ON DELETE CASCADE
+);
+
+-- Predicted Diff-level Risks (Groq LLM output)
+CREATE TABLE IF NOT EXISTS predicted_risks (
+  id TEXT PRIMARY KEY, -- Unique UUID/hash
+  pr_id TEXT NOT NULL,
+  pattern_id TEXT NOT NULL, -- e.g., 'missing-retry-on-external-call'
+  title TEXT NOT NULL,
+  location TEXT NOT NULL, -- e.g., 'src/checkout.ts#L45'
+  why TEXT NOT NULL,
+  severity TEXT NOT NULL, -- 'critical' | 'warning' | 'info'
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(pr_id) REFERENCES pull_requests(id) ON DELETE CASCADE
+);
+
+-- Local fallback store for Parcle memories (when PARCLE_API_KEY is absent)
+CREATE TABLE IF NOT EXISTS local_memories (
+  id TEXT PRIMARY KEY,
+  content TEXT NOT NULL,
+  pattern_id TEXT NOT NULL,
+  repo_name TEXT NOT NULL,
+  pr_number INTEGER NOT NULL,
+  tags TEXT NOT NULL, -- JSON-stringified array of tags
+  resolved BOOLEAN DEFAULT 0,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);

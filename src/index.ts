@@ -146,6 +146,17 @@ export default {
         }
       }
 
+      // 5.1 API: Sync Repository (Baseline + PR History Backfill)
+      const syncMatch = path.match(/^\/api\/repos\/([^\/]+)\/([^\/]+)\/sync$/);
+      if (syncMatch && request.method === 'POST') {
+        const owner = syncMatch[1];
+        const name = syncMatch[2];
+        ctx.waitUntil(runRepositorySync(owner, name, env));
+        return new Response(JSON.stringify({ message: 'Sync queued successfully' }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+        });
+      }
+
       // 6. Serve Enter Pro Dashboard Frontend
       if (path === '/' || path === '/dashboard' || path === '/index.html') {
         const html = await fetchDashboardHtml(env);
@@ -425,5 +436,162 @@ async function fetchDashboardJs(): Promise<string> {
     return assets.JS;
   } catch (e) {
     return 'console.error("Dashboard script missing");';
+  }
+}
+
+// Background sync worker for already going-on projects (baseline scan + past PR backfill)
+async function runRepositorySync(owner: string, repo: string, env: Env) {
+  if (!env.GITHUB_APP_ID || !env.GITHUB_PRIVATE_KEY) {
+    console.error('GITHUB_APP_ID or GITHUB_PRIVATE_KEY is not defined. Cannot sync.');
+    return;
+  }
+
+  const db = new DbHelper(env.DB);
+  const github = new GitHubClient(env.GITHUB_APP_ID, env.GITHUB_PRIVATE_KEY);
+  const parcle = new ParcleClient(env.PARCLE_API_KEY || null, env.DB);
+  const groq = new GroqEngine(env.GROQ_API_KEY || 'dummy_key');
+  const repoFullName = `${owner}/${repo}`;
+
+  try {
+    console.log(`Starting repository sync for ${repoFullName}...`);
+    // 1. Get installation ID for repo
+    const installationId = await github.getRepositoryInstallation(owner, repo);
+    const token = await github.getInstallationToken(installationId);
+
+    // 2. Fetch repo details (like default branch)
+    const repoDetails = await github.getRepositoryDetails(token, owner, repo);
+    const defaultBranch = repoDetails.default_branch || 'main';
+    const repoId = repoDetails.id;
+
+    // Register / update repository in D1
+    await db.upsertRepo(repoId, owner, repo);
+
+    // 3. Fetch priority files at default branch head to calculate baseline score
+    const files = await github.fetchPriorityFiles(token, owner, repo, defaultBranch, PRIORITY_PATTERNS);
+    const hits = runDeterministicChecks({ files });
+    
+    // Baseline score calculation
+    const initialLLM = { security: 100, reliability: 100, observability: 100, performance: 100, deployment: 100 };
+    const clampedResult = applyPenalties(initialLLM, hits);
+    const overallScore = Math.round(
+      (clampedResult.dimensions.security * 0.30) +
+      (clampedResult.dimensions.reliability * 0.25) +
+      (clampedResult.dimensions.observability * 0.15) +
+      (clampedResult.dimensions.performance * 0.15) +
+      (clampedResult.dimensions.deployment * 0.15)
+    );
+
+    // Update repository current score
+    await db.updateRepoScore(repoId, overallScore);
+    console.log(`Baseline score for ${repoFullName} computed: ${overallScore}`);
+
+    // 4. Fetch last 5 pull requests (closed, merged, or open)
+    const pastPRs = await github.getPastPullRequests(token, owner, repo, 5);
+    console.log(`Found ${pastPRs.length} past pull requests to backfill.`);
+
+    for (const pr of pastPRs) {
+      const prNumber = pr.number;
+      const prTitle = pr.title;
+      const prState = pr.state;
+      const headSha = pr.head.sha;
+      const prId = `${repoFullName}/pull/${prNumber}`;
+
+      console.log(`Backfilling PR #${prNumber} ("${prTitle}") at SHA ${headSha}...`);
+
+      try {
+        // Fetch PR diff
+        const diff = await github.getPRDiff(token, owner, repo, prNumber);
+
+        // Fetch Priority Files at PR HEAD
+        const prFiles = await github.fetchPriorityFiles(token, owner, repo, headSha, PRIORITY_PATTERNS);
+
+        // Run Deterministic checks
+        const prHits = runDeterministicChecks({ files: prFiles, diff });
+
+        // Memory Recall loop
+        const patternMatches = await Promise.all(
+          prHits.map(h => parcle.recallByPattern(h.id, repoFullName))
+        );
+        const matchedHistory = prHits.map((h, idx) => ({
+          hit: h,
+          memories: patternMatches[idx]
+        })).filter(m => m.memories.length > 0);
+
+        // Reasoning loop (Groq)
+        const recalledMemoriesList = matchedHistory.flatMap(m => m.memories);
+        const analysis = await groq.analyzePR(repoFullName, prNumber, prTitle, diff, prFiles, recalledMemoriesList);
+
+        // Apply clamping
+        const clamped = applyPenalties(analysis.dimensions, prHits);
+        const prScore = Math.round(
+          (clamped.dimensions.security * 0.30) +
+          (clamped.dimensions.reliability * 0.25) +
+          (clamped.dimensions.observability * 0.15) +
+          (clamped.dimensions.performance * 0.15) +
+          (clamped.dimensions.deployment * 0.15)
+        );
+
+        // Save PR scan record in D1
+        await db.upsertPR({
+          id: prId,
+          repo_id: repoId,
+          pr_number: prNumber,
+          title: prTitle,
+          state: prState,
+          overall_score: prScore,
+          security_score: clamped.dimensions.security,
+          reliability_score: clamped.dimensions.reliability,
+          observability_score: clamped.dimensions.observability,
+          performance_score: clamped.dimensions.performance,
+          deployment_score: clamped.dimensions.deployment
+        });
+
+        // Insert rule hits
+        await db.clearPRRuleHits(prId);
+        for (const hit of prHits) {
+          await db.insertRuleHit({
+            id: `${prId}:${hit.id}`,
+            pr_id: prId,
+            rule_id: hit.id,
+            dimension: hit.dimension,
+            penalty: hit.penalty,
+            title: hit.title,
+            description: hit.description
+          });
+        }
+
+        // Insert predicted risks
+        await db.clearPRRisks(prId);
+        for (const risk of analysis.risks) {
+          await db.insertRisk({
+            id: `${prId}:${crypto.randomUUID()}`,
+            pr_id: prId,
+            pattern_id: risk.id,
+            title: risk.title,
+            location: risk.location,
+            why: risk.why,
+            severity: risk.severity
+          });
+        }
+
+        // Store risks in Parcle Memory (learning from past PRs too!)
+        for (const risk of analysis.risks) {
+          await parcle.storePattern(
+            `[PR #${prNumber}] Detected ${risk.severity} risk: "${risk.title}" in ${risk.location}. ${risk.why}`,
+            risk.id,
+            repoFullName,
+            { prNumber, tags: [risk.severity] }
+          );
+        }
+
+        console.log(`PR #${prNumber} backfill complete. Score: ${prScore}`);
+      } catch (prErr) {
+        console.error(`Failed to backfill PR #${prNumber}:`, prErr);
+      }
+    }
+
+    console.log(`Repository sync for ${repoFullName} completed successfully.`);
+  } catch (err) {
+    console.error(`Repository sync failed for ${repoFullName}:`, err);
   }
 }

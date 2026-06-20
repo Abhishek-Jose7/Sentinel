@@ -35,7 +35,7 @@ export class GitHubClient {
 
   constructor(appId: string, privateKey: string) {
     this.appId = appId;
-    this.privateKey = privateKey;
+    this.privateKey = privateKey.replace(/\\n/g, '\n');
   }
 
   // Generates JWT to authenticate as a GitHub App
@@ -306,6 +306,59 @@ ${risk.why}
     if (!res.ok) {
       console.error(`Failed to automatically create issue: ${res.status} ${await res.text()}`);
     }
+  }
+
+  // Get installation ID for a specific repository
+  async getRepositoryInstallation(owner: string, repo: string): Promise<number> {
+    const appJwt = await this.getAppJwt();
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/installation`, {
+      headers: {
+        'Authorization': `Bearer ${appJwt}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Sentinel-App'
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to get repo installation: ${res.status} ${await res.text()}`);
+    }
+
+    const data = await res.json() as any;
+    return data.id;
+  }
+
+  // Fetch repository basic details (e.g. default branch)
+  async getRepositoryDetails(token: string, owner: string, repo: string): Promise<any> {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Sentinel-App'
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to get repo details: ${res.status}`);
+    }
+
+    return await res.json();
+  }
+
+  // Fetch past pull requests
+  async getPastPullRequests(token: string, owner: string, repo: string, limit = 5): Promise<any[]> {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=${limit}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Sentinel-App'
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to get past PRs: ${res.status}`);
+    }
+
+    return await res.json() as any[];
   }
 }
 

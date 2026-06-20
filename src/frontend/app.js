@@ -32,7 +32,8 @@ document.addEventListener('DOMContentLoaded', () => {
     btnCloseModal: document.getElementById('btn-close-modal'),
     proForm: document.getElementById('pro-form'),
     licenseKeyInput: document.getElementById('license-key'),
-    formError: document.getElementById('form-error')
+    formError: document.getElementById('form-error'),
+    btnSyncRepo: document.getElementById('btn-sync-repo')
   };
 
   // 1. Initial Load
@@ -118,6 +119,38 @@ document.addEventListener('DOMContentLoaded', () => {
         loadPRScan(state.selectedRepo.owner, state.selectedRepo.name, prNumber);
       }
     });
+
+    // Sync Repository
+    if (el.btnSyncRepo) {
+      el.btnSyncRepo.addEventListener('click', async () => {
+        if (!state.selectedRepo) return;
+        const btn = el.btnSyncRepo;
+        const originalText = btn.innerHTML;
+        
+        btn.disabled = true;
+        btn.innerHTML = '🔄 Syncing...';
+        
+        try {
+          const res = await fetch(`/api/repos/${state.selectedRepo.owner}/${state.selectedRepo.name}/sync`, {
+            method: 'POST'
+          });
+          const data = await res.json();
+          if (res.ok) {
+            alert('Repository sync queued successfully. Previous commits/scans will backfill in the background. Dashboard will reload in 5 seconds.');
+            setTimeout(() => {
+              loadRepository(state.selectedRepo.owner, state.selectedRepo.name);
+            }, 5000);
+          } else {
+            alert(`Sync failed: ${data.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          alert('Failed to connect to sync endpoint.');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      });
+    }
   }
 
   // 3. API Loaders

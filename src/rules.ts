@@ -30,6 +30,9 @@ export interface RepositoryFacts {
   usesDatabase: boolean;
   usesAuthentication: boolean;
   envReads: string[];
+  hasEvalUsage: boolean;
+  hasSyncFsUsage: boolean;
+  hasHardcodedSecrets: boolean;
 }
 
 const RATE_LIMIT_PATTERNS = [/express-rate-limit/i, /rate-?limit/i, /@hono\/rate-limiter/i];
@@ -92,7 +95,10 @@ export function extractRepositoryFacts(files: Record<string, string>): Repositor
     hasPackageLock: pathMatches(paths, /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i),
     usesDatabase: /DATABASE_URL|postgres|mysql|sqlite|prisma|drizzle|D1Database/i.test(allText),
     usesAuthentication: /jwt|oauth|passport|next-auth|auth0|clerk|supabase.auth/i.test(allText),
-    envReads
+    envReads,
+    hasEvalUsage: /\beval\s*\(/g.test(allText),
+    hasSyncFsUsage: /\b(read|write|append)FileSync\b/g.test(allText),
+    hasHardcodedSecrets: /(password|passwd|api_key|client_secret|private_key)\s*=\s*['"`][a-zA-Z0-9_\-]{8,}['"`]/i.test(allText)
   };
 }
 
@@ -167,6 +173,36 @@ export function runDeterministicChecks(input: RuleInput): RuleHit[] {
       penalty: 8,
       title: 'No CI workflow detected',
       description: 'No GitHub Actions, GitLab CI, CircleCI, Buildkite, or Jenkins workflow was found.',
+    });
+  }
+
+  if (facts.hasEvalUsage || (input.diff && /\beval\s*\(/.test(input.diff))) {
+    hits.push({
+      id: 'eval-usage',
+      dimension: 'security',
+      penalty: 15,
+      title: 'Eval usage detected',
+      description: 'Avoid using eval() as it exposes the application to code injection vulnerabilities.',
+    });
+  }
+
+  if (facts.hasHardcodedSecrets || (input.diff && /(password|passwd|api_key|client_secret|private_key)\s*=\s*['"`][a-zA-Z0-9_\-]{8,}['"`]/i.test(input.diff))) {
+    hits.push({
+      id: 'hardcoded-secrets',
+      dimension: 'security',
+      penalty: 20,
+      title: 'Potential hardcoded secrets',
+      description: 'Avoid committing hardcoded credentials, API keys, or private tokens in code.',
+    });
+  }
+
+  if (facts.hasSyncFsUsage || (input.diff && /\b(read|write|append)FileSync\b/.test(input.diff))) {
+    hits.push({
+      id: 'sync-fs-usage',
+      dimension: 'performance',
+      penalty: 15,
+      title: 'Sync filesystem usage',
+      description: 'Sync filesystem methods block the single-threaded event loop and degrade worker performance.',
     });
   }
 

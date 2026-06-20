@@ -169,7 +169,7 @@ export class DbHelper {
   async insertRuleHit(hit: Omit<DbRuleHit, 'created_at'>): Promise<void> {
     if (!this.db) return;
     await this.db.prepare(
-      `INSERT INTO rule_hits (id, pr_id, rule_id, dimension, penalty, title, description) 
+      `INSERT OR REPLACE INTO rule_hits (id, pr_id, rule_id, dimension, penalty, title, description) 
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       hit.id, hit.pr_id, hit.rule_id, hit.dimension, hit.penalty, hit.title, hit.description
@@ -184,7 +184,7 @@ export class DbHelper {
   async insertRisk(risk: Omit<DbRisk, 'created_at'>): Promise<void> {
     if (!this.db) return;
     await this.db.prepare(
-      `INSERT INTO predicted_risks (id, pr_id, pattern_id, title, location, why, severity) 
+      `INSERT OR REPLACE INTO predicted_risks (id, pr_id, pattern_id, title, location, why, severity) 
        VALUES (?, ?, ?, ?, ?, ?, ?)`
     ).bind(
       risk.id, risk.pr_id, risk.pattern_id, risk.title, risk.location, risk.why, risk.severity

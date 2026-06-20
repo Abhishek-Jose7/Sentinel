@@ -251,6 +251,25 @@ async function runTests() {
     console.error('❌ Test 1 Failed: Some rule hits are missing.');
   }
 
+  // Test 1.5: Security & Performance Rules
+  console.log('\n--- Test 1.5: Security & Performance Rules ---');
+  const mockSecPerfFiles = {
+    'package.json': '{"dependencies": {}, "scripts": {"test": "jest"}}',
+    'wrangler.toml': 'name = "test-worker"',
+    'src/index.ts': 'eval("badCode");\nfs.readFileSync("config.json");\nconst api_key = "abc123xyzSecret";',
+    '.github/workflows/ci.yml': 'name: CI'
+  };
+  const secPerfHits = runDeterministicChecks({ files: mockSecPerfFiles });
+  console.log('Security & Performance Hits count:', secPerfHits.length);
+  secPerfHits.forEach(h => console.log(`  [Hit] ID: ${h.id} (${h.dimension}) - Penalty: -${h.penalty}`));
+  const expectedSecPerfIds = ['eval-usage', 'hardcoded-secrets', 'sync-fs-usage'];
+  const allSecPerfMatch = expectedSecPerfIds.every(id => secPerfHits.some(h => h.id === id));
+  if (allSecPerfMatch) {
+    console.log('✅ Test 1.5 Passed: Deterministic security & performance rules triggered correctly!');
+  } else {
+    console.error('❌ Test 1.5 Failed: Security or performance rule hits are missing.');
+  }
+
   // Test 2: Dimension Clamping (Hybrid Scoring)
   console.log('\n--- Test 2: Hybrid Scoring Clamping ---');
   const initialLLM = {

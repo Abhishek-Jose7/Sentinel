@@ -1,9 +1,9 @@
 const fs = require('fs');
 const path = require('path');
 
-const html = fs.readFileSync(path.join(__dirname, '../src/frontend/index.html'), 'utf8');
-const css = fs.readFileSync(path.join(__dirname, '../src/frontend/styles.css'), 'utf8');
-const js = fs.readFileSync(path.join(__dirname, '../src/frontend/app.js'), 'utf8');
+const html = fs.readFileSync(path.join(__dirname, '../src/frontend/index.html'), 'utf8').replace(/\r\n/g, '\n');
+const css = fs.readFileSync(path.join(__dirname, '../src/frontend/styles.css'), 'utf8').replace(/\r\n/g, '\n');
+const js = fs.readFileSync(path.join(__dirname, '../src/frontend/app.js'), 'utf8').replace(/\r\n/g, '\n');
 
 const output = `// Auto-generated assets file for Sentinel Dashboard
 export const HTML = ${JSON.stringify(html)};

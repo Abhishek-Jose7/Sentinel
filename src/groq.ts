@@ -50,6 +50,25 @@ export class GroqEngine {
     return Array.from(files);
   }
 
+  private formatFactsForPrompt(facts: any): string {
+    if (!facts) return 'No repository facts available.';
+    return [
+      `Scanned Files: ${facts.scannedFileCount || 0}`,
+      `Architecture: ${(facts.architecture || []).join(', ') || 'Unknown'}`,
+      `Rate Limiting: ${facts.hasRateLimiting ? 'Present' : 'Absent'}`,
+      `Health Endpoint: ${facts.hasHealthEndpoint ? 'Present' : 'Absent'}`,
+      `Structured Logging: ${facts.hasStructuredLogging ? 'Present' : 'Absent'}`,
+      `Env Variable Validation: ${facts.hasEnvValidation ? 'Present' : 'Absent'}`,
+      `Test Suite: ${facts.hasTests ? 'Detected' : 'Not detected'}`,
+      `Monitoring & Tracing: ${facts.hasMonitoring ? 'Present' : 'Absent'}`,
+      `Continuous Integration (CI): ${facts.hasCiConfig ? 'Present' : 'Absent'}`,
+      `Containerization (Dockerfile): ${facts.hasDockerfile ? 'Present' : 'Absent'}`,
+      `Uses Database: ${facts.usesDatabase ? 'Yes' : 'No'}`,
+      `Uses Authentication: ${facts.usesAuthentication ? 'Yes' : 'No'}`,
+      `Environment Variable Reads: ${(facts.envReads || []).join(', ') || 'None'}`
+    ].join('\n');
+  }
+
   async analyzePR(
     repoName: string,
     prNumber: number,
@@ -114,13 +133,13 @@ Changed Files:
 ${changedFiles.map(f => `- ${f}`).join('\n')}
 
 Repository Facts & Architecture:
-${JSON.stringify(facts, null, 2)}
+${this.formatFactsForPrompt(facts)}
 
 Deterministic Rule Hits in this PR:
 ${JSON.stringify(hits, null, 2)}
 
 === PR DIFF (THE CHANGE) ===
-${this.compactText(diff, 10000)}
+${this.compactText(diff, 4000)}
 
 === TOP HISTORICAL INCIDENT MEMORIES ===
 ${formattedMemories}
@@ -189,7 +208,7 @@ Generate a concise JSON-only baseline analysis. Do not invent file contents. Gro
 Branch: ${input.branch}
 
 Repository Facts:
-${JSON.stringify(input.facts, null, 2)}
+${this.formatFactsForPrompt(input.facts)}
 
 Deterministic Dimension Scores:
 ${JSON.stringify(input.dimensions, null, 2)}

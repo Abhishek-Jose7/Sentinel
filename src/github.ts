@@ -135,10 +135,14 @@ export class GitHubClient {
     repoOwner: string,
     repoName: string,
     ref: string,
-    paths: string[]
+    paths: string[],
+    onProgress?: (path: string) => Promise<void>
   ): Promise<Record<string, string>> {
     const files: Record<string, string> = {};
     for (const path of paths) {
+      if (onProgress) {
+        await onProgress(path);
+      }
       const content = await this.getFileContent(token, repoOwner, repoName, path, ref);
       if (content) {
         files[path] = content;
@@ -153,7 +157,8 @@ export class GitHubClient {
     repoName: string,
     ref: string,
     maxFiles = 90,
-    maxBytesPerFile = 45000
+    maxBytesPerFile = 45000,
+    onProgress?: (path: string) => Promise<void>
   ): Promise<Record<string, string>> {
     const treeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${encodeURIComponent(ref)}?recursive=1`, {
       headers: {
@@ -171,12 +176,14 @@ export class GitHubClient {
         'wrangler.json',
         'tsconfig.json',
         'src/index.ts',
+        'src/index.js',
         'src/server.ts',
         'src/app.ts',
+        'src/main.ts',
         'server.js',
         'app.js',
         'index.js'
-      ]);
+      ], onProgress);
     }
 
     const data = await treeRes.json() as any;
@@ -188,7 +195,7 @@ export class GitHubClient {
       .slice(0, maxFiles)
       .map((item: any) => item.path);
 
-    return this.fetchPriorityFiles(token, repoOwner, repoName, ref, paths);
+    return this.fetchPriorityFiles(token, repoOwner, repoName, ref, paths, onProgress);
   }
 
   private isScannablePath(path: string): boolean {

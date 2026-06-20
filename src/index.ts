@@ -747,7 +747,17 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
     // 3. Fetch a capped, representative set of repository files to calculate baseline score.
     // Groq receives facts derived from these files, not their raw contents.
     await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 2/7: Extracting code facts and dependencies...');
-    const files = await github.fetchRepositoryScanFiles(token, owner, repo, defaultBranch);
+    const files = await github.fetchRepositoryScanFiles(
+      token,
+      owner,
+      repo,
+      defaultBranch,
+      30,
+      45000,
+      async (filePath) => {
+        await db.updateRepoScanStatus(repoId, 'scanning', `Stage 2/7: Analysing ${filePath}...`);
+      }
+    );
     const facts = extractRepositoryFacts(files);
 
     await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 3/7: Running deterministic rules engine...');
@@ -908,27 +918,14 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
           const commitHits = runDeterministicChecks({ files: commitFiles, diff });
           const commitFacts = extractRepositoryFacts(commitFiles);
 
-          // Groq analysis
-          let commitAnalysis: AnalysisResult;
-          try {
-            commitAnalysis = await groq.analyzePR(
-              repoFullName,
-              commitPrNumber,
-              commitPrTitle,
-              diff,
-              commitFacts,
-              commitHits,
-              []
-            );
-          } catch (e) {
-            commitAnalysis = {
-              dimensions: fallbackDimensions,
-              risks: [],
-              summary: 'Commit scan completed deterministic checks.'
-            };
-          }
-
-          const commitClamped = applyPenalties(commitAnalysis.dimensions, commitHits);
+          // Skip Groq analysis for historical backfilled commits to avoid API limits (12k TPM)
+          const commitDimensions = scoreFromFacts(commitHits);
+          const commitClamped = applyPenalties(commitDimensions, commitHits);
+          const commitAnalysis = {
+            dimensions: commitClamped.dimensions,
+            risks: [] as any[],
+            summary: 'Commit scan completed local deterministic posture check.'
+          };
           const commitOverallScore = Math.round(
             (commitClamped.dimensions.security * 0.30) +
             (commitClamped.dimensions.reliability * 0.25) +
@@ -1031,12 +1028,14 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
           memories: patternMatches[idx]
         })).filter(m => m.memories.length > 0);
 
-        // Reasoning loop (Groq)
-        const recalledMemoriesList = matchedHistory.flatMap(m => m.memories);
-        const analysis = await groq.analyzePR(repoFullName, prNumber, prTitle, diff, prFacts, prHits, recalledMemoriesList);
-
-        // Apply clamping
-        const clamped = applyPenalties(analysis.dimensions, prHits);
+        // Skip Groq analysis for historical backfilled PRs to avoid API limits (12k TPM)
+        const prDimensions = scoreFromFacts(prHits);
+        const clamped = applyPenalties(prDimensions, prHits);
+        const analysis = {
+          dimensions: clamped.dimensions,
+          risks: [] as any[],
+          summary: 'Historical PR scan completed local deterministic posture check.'
+        };
         const prScore = Math.round(
           (clamped.dimensions.security * 0.30) +
           (clamped.dimensions.reliability * 0.25) +

@@ -147,6 +147,70 @@ export class GitHubClient {
     return files;
   }
 
+  async fetchRepositoryScanFiles(
+    token: string,
+    repoOwner: string,
+    repoName: string,
+    ref: string,
+    maxFiles = 90,
+    maxBytesPerFile = 45000
+  ): Promise<Record<string, string>> {
+    const treeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${encodeURIComponent(ref)}?recursive=1`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Sentinel-App'
+      }
+    });
+
+    if (!treeRes.ok) {
+      console.warn(`Failed to fetch repository tree: ${treeRes.status}`);
+      return this.fetchPriorityFiles(token, repoOwner, repoName, ref, [
+        'package.json',
+        'wrangler.toml',
+        'wrangler.json',
+        'tsconfig.json',
+        'src/index.ts',
+        'src/server.ts',
+        'src/app.ts',
+        'server.js',
+        'app.js',
+        'index.js'
+      ]);
+    }
+
+    const data = await treeRes.json() as any;
+    const tree = Array.isArray(data.tree) ? data.tree : [];
+    const paths = tree
+      .filter((item: any) => item.type === 'blob' && typeof item.path === 'string')
+      .filter((item: any) => this.isScannablePath(item.path) && Number(item.size || 0) <= maxBytesPerFile)
+      .sort((a: any, b: any) => this.scanPriority(b.path) - this.scanPriority(a.path))
+      .slice(0, maxFiles)
+      .map((item: any) => item.path);
+
+    return this.fetchPriorityFiles(token, repoOwner, repoName, ref, paths);
+  }
+
+  private isScannablePath(path: string): boolean {
+    if (/(^|\/)(node_modules|dist|build|coverage|\.next|\.nuxt|vendor|\.git)\//i.test(path)) {
+      return false;
+    }
+    if (/\.(png|jpe?g|gif|webp|ico|pdf|zip|gz|tar|mp4|mov|woff2?|ttf|map)$/i.test(path)) {
+      return false;
+    }
+    return /\.(ts|tsx|js|jsx|mjs|cjs|json|toml|ya?ml|md|sql|env\.example|dockerfile)$/i.test(path)
+      || /(^|\/)(Dockerfile|Jenkinsfile|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i.test(path)
+      || /^\.github\/workflows\//i.test(path);
+  }
+
+  private scanPriority(path: string): number {
+    if (/package\.json$|wrangler\.(json|toml)$|tsconfig\.json$|Dockerfile$|\.github\/workflows\//i.test(path)) return 100;
+    if (/(src|app|pages|server|api)\//i.test(path)) return 80;
+    if (/(test|spec|__tests__)/i.test(path)) return 65;
+    if (/\.(md|sql|ya?ml|toml)$/i.test(path)) return 45;
+    return 30;
+  }
+
   // Create Check Run
   async createCheckRun(
     token: string,

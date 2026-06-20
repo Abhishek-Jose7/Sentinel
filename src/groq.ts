@@ -20,6 +20,15 @@ export interface AnalysisResult {
   summary: string;
 }
 
+export interface BaselineAnalysisInput {
+  repoName: string;
+  branch: string;
+  facts: any;
+  dimensions: Record<string, number>;
+  hits: Array<{ id: string; dimension: string; penalty: number; title: string; description: string }>;
+  memories: any[];
+}
+
 export class GroqEngine {
   private apiKey: string;
   private model: string;
@@ -29,28 +38,42 @@ export class GroqEngine {
     this.model = model;
   }
 
+  private getChangedFilesFromDiff(diff: string): string[] {
+    const files = new Set<string>();
+    const lines = diff.split('\n');
+    for (const line of lines) {
+      if (line.startsWith('+++ b/')) {
+        const file = line.substring(6).trim();
+        if (file) files.add(file);
+      }
+    }
+    return Array.from(files);
+  }
+
   async analyzePR(
     repoName: string,
     prNumber: number,
     prTitle: string,
     diff: string,
-    files: Record<string, string>,
+    facts: any,
+    hits: Array<{ id: string; dimension: string; penalty: number; title: string; description: string }>,
     memories: any[]
   ): Promise<AnalysisResult> {
     if (!this.apiKey) {
       throw new Error('GROQ_API_KEY is not defined');
     }
 
+    const changedFiles = this.getChangedFilesFromDiff(diff);
     const formattedMemories = memories.length > 0 
-      ? memories.map((m, i) => `${i + 1}. [Pattern: ${m.metadata?.pattern || 'unknown'}] Content: ${m.content}`).join('\n')
+      ? memories.slice(0, 3).map((m, i) => `${i + 1}. [Pattern: ${m.metadata?.pattern || 'unknown'}] Content: ${m.content}`).join('\n')
       : 'No previous incidents or pattern matches stored in memory for this repo.';
 
-    const fileList = Object.keys(files).join(', ');
-    const fileContents = Object.entries(files)
-      .map(([name, content]) => `--- File: ${name} ---\n${content}`)
-      .join('\n\n');
+    const systemPrompt = `You are Sentinel's Groq Analysis Engine. Your job is to analyze a PR based on:
+1. The list of changed files.
+2. The PR diff (which represents "Just the change", not entire files).
+3. The repository configuration facts.
+4. Historical pattern memories.
 
-    const systemPrompt = `You are Sentinel's Groq Analysis Engine. Your job is to analyze the PR diff, priority files, and historical pattern memories.
 Assess the quality of the PR across 5 dimensions on a 0-100 scale:
 1. security: code vulnerabilities, dependency issues, secret leaks, raw environment reads.
 2. reliability: error handling, rate limiting, retries, race conditions.
@@ -58,7 +81,7 @@ Assess the quality of the PR across 5 dimensions on a 0-100 scale:
 4. performance: memory leaks, database query performance, high-latency blocks.
 5. deployment: config management, CI/CD compatibility, env verification.
 
-Additionally, identify specific risks added/changed in this PR, especially noting if they match any of the past incidents or pattern memories provided.
+Identify specific risks added/changed in this PR, especially noting if they match any of the past incidents or pattern memories provided.
 
 You must output a single, strictly valid JSON object matching the following TypeScript schema:
 {
@@ -81,23 +104,25 @@ You must output a single, strictly valid JSON object matching the following Type
   "summary": "1-2 sentence high-level summary of the analysis findings"
 }
 
-Make sure to rate raw process.env reads lower on 'deployment' and 'security' if no validation library is present.
-Make sure to search for unwrapped await calls and penalize 'reliability' accordingly.
-If a risk matches a past incident's pattern ID, reuse that exact pattern ID in your "id" field so the memory matches!
-
+Ground all risks strictly in the diff or facts provided. Only penalize dimensions if the diff introduces issues, or if the repository facts indicate a lack of features.
 Provide ONLY the raw JSON output. No conversational wrapper, no markdown block formatting.`;
 
     const userPrompt = `Repository: ${repoName}
 PR #${prNumber}: "${prTitle}"
 
-=== PR DIFF ===
-${diff}
+Changed Files:
+${changedFiles.map(f => `- ${f}`).join('\n')}
 
-=== RELEVANT SOURCE FILES ===
-Files included: ${fileList}
-${fileContents}
+Repository Facts & Architecture:
+${JSON.stringify(facts, null, 2)}
 
-=== HISTORICAL INCIDENT MEMORIES ===
+Deterministic Rule Hits in this PR:
+${JSON.stringify(hits, null, 2)}
+
+=== PR DIFF (THE CHANGE) ===
+${this.compactText(diff, 10000)}
+
+=== TOP HISTORICAL INCIDENT MEMORIES ===
 ${formattedMemories}
 
 Analyze the changes and output your JSON:`;
@@ -145,6 +170,110 @@ Analyze the changes and output your JSON:`;
         summary: 'Groq analysis was bypassed due to API error. Local deterministic checks still apply.'
       };
     }
+  }
+
+  async analyzeBaseline(input: BaselineAnalysisInput): Promise<AnalysisResult> {
+    if (!this.apiKey) {
+      throw new Error('GROQ_API_KEY is not defined');
+    }
+
+    const memories = input.memories.length > 0
+      ? input.memories.slice(0, 3).map((m, i) => `${i + 1}. [Pattern: ${m.metadata?.pattern || 'unknown'}] ${this.compactText(m.content || '', 600)}`).join('\n')
+      : 'No matching repository memories found.';
+
+    const systemPrompt = `You are Sentinel's baseline analysis engine.
+You receive compact repository facts and deterministic scores, not full repository files.
+Generate a concise JSON-only baseline analysis. Do not invent file contents. Ground recommendations in the facts and rule hits provided.`;
+
+    const userPrompt = `Repository: ${input.repoName}
+Branch: ${input.branch}
+
+Repository Facts:
+${JSON.stringify(input.facts, null, 2)}
+
+Deterministic Dimension Scores:
+${JSON.stringify(input.dimensions, null, 2)}
+
+Rule Hits:
+${JSON.stringify(input.hits, null, 2)}
+
+Top Memories:
+${memories}
+
+Return JSON matching this schema:
+{
+  "dimensions": {
+    "security": number,
+    "reliability": number,
+    "observability": number,
+    "performance": number,
+    "deployment": number
+  },
+  "risks": [
+    {
+      "id": "kebab-case-pattern-id",
+      "title": "short failure prediction or recommendation",
+      "location": "repository|config|api|tests|observability",
+      "why": "plain explanation grounded in facts",
+      "severity": "critical" | "warning" | "info"
+    }
+  ],
+  "summary": "1-2 sentence baseline readiness summary"
+}
+
+Keep dimensions close to the deterministic scores. Only adjust by at most 5 points per dimension if the facts justify it.`;
+
+    try {
+      const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+          model: this.model,
+          messages: [
+            { role: 'system', content: systemPrompt },
+            { role: 'user', content: userPrompt }
+          ],
+          response_format: { type: 'json_object' },
+          temperature: 0.1
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`Groq API returned status ${response.status}: ${await response.text()}`);
+      }
+
+      const responseData = await response.json() as any;
+      return this.parseJSONContent(responseData.choices?.[0]?.message?.content || '');
+    } catch (err) {
+      console.error('Groq baseline analysis query failed:', err);
+      return {
+        dimensions: {
+          security: input.dimensions.security ?? 80,
+          reliability: input.dimensions.reliability ?? 80,
+          observability: input.dimensions.observability ?? 80,
+          performance: input.dimensions.performance ?? 80,
+          deployment: input.dimensions.deployment ?? 80
+        },
+        risks: input.hits.map(hit => ({
+          id: hit.id,
+          title: hit.title,
+          location: hit.dimension,
+          why: hit.description,
+          severity: hit.penalty >= 15 ? 'warning' : 'info'
+        })),
+        summary: 'Baseline analysis used deterministic repository facts because Groq reasoning was unavailable.'
+      };
+    }
+  }
+
+  private compactText(text: string, maxChars: number): string {
+    if (!text || text.length <= maxChars) return text || '';
+    const head = text.slice(0, Math.floor(maxChars * 0.65));
+    const tail = text.slice(text.length - Math.floor(maxChars * 0.25));
+    return `${head}\n\n...[trimmed ${text.length - head.length - tail.length} chars]...\n\n${tail}`;
   }
 
   private parseJSONContent(text: string): AnalysisResult {

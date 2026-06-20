@@ -5,9 +5,11 @@ export interface DbRepo {
   owner: string;
   name: string;
   installed_at: string;
-  current_score: number;
+  current_score: number | null;
   license_key: string | null;
   is_pro: number; // 0 or 1
+  scan_status: string;
+  scan_message: string;
 }
 
 export interface DbPR {
@@ -77,6 +79,13 @@ export class DbHelper {
     await this.db.prepare(
       'UPDATE repositories SET current_score = ? WHERE id = ?'
     ).bind(score, id).run();
+  }
+
+  async updateRepoScanStatus(id: number, status: string, message: string): Promise<void> {
+    if (!this.db) return;
+    await this.db.prepare(
+      'UPDATE repositories SET scan_status = ?, scan_message = ? WHERE id = ?'
+    ).bind(status, message, id).run();
   }
 
   async activatePro(owner: string, name: string, licenseKey: string): Promise<boolean> {

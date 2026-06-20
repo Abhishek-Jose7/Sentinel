@@ -1,8 +1,8 @@
 import jwt from '@tsndr/cloudflare-worker-jwt';
 import { DbHelper } from './db';
-import { runDeterministicChecks, applyPenalties } from './rules';
+import { runDeterministicChecks, applyPenalties, extractRepositoryFacts, scoreFromFacts, calculateOverallScore } from './rules';
 import { ParcleClient } from './parcle';
-import { GroqEngine } from './groq';
+import { GroqEngine, AnalysisResult } from './groq';
 import { GitHubClient, verifyWebhookSignature, buildPRComment, buildPatternMatchSection } from './github';
 
 export interface Env {
@@ -419,7 +419,17 @@ export default {
         }
 
         ctx.waitUntil(runRepositorySync(owner, name, env));
-        return new Response(JSON.stringify({ message: 'Scan queued successfully' }), {
+        return new Response(JSON.stringify({
+          message: 'Scan queued successfully',
+          stages: [
+            'GitHub tree discovery',
+            'Repository fact extraction',
+            'Deterministic rule scoring',
+            'Parcle memory recall',
+            'Compact Groq baseline reasoning',
+            'Scan history update'
+          ]
+        }), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }
         });
       }
@@ -544,9 +554,10 @@ async function runAuditLoop(payload: any, env: Env) {
       memories: patternMatches[idx]
     })).filter(m => m.memories.length > 0);
 
-    // 7. Reasoning loop: feed diff + files + recalled memories to Groq
+    // 7. Reasoning loop: feed diff + facts + rule hits + recalled memories to Groq
+    const facts = extractRepositoryFacts(files);
     const recalledMemoriesList = matchedHistory.flatMap(m => m.memories);
-    const analysis = await groq.analyzePR(repoFullName, prNumber, prTitle, diff, files, recalledMemoriesList);
+    const analysis = await groq.analyzePR(repoFullName, prNumber, prTitle, diff, facts, hits, recalledMemoriesList);
 
     // 8. Apply Clamping / Penalties to create hybrid scores
     const { dimensions, penaltiesByDimension } = applyPenalties(analysis.dimensions, hits);
@@ -731,21 +742,21 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
 
     // Register / update repository in D1
     await db.upsertRepo(repoId, owner, repo);
+    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 1/7: Discovering GitHub repository structure...');
 
-    // 3. Fetch priority files at default branch head to calculate baseline score
-    const files = await github.fetchPriorityFiles(token, owner, repo, defaultBranch, PRIORITY_PATTERNS);
+    // 3. Fetch a capped, representative set of repository files to calculate baseline score.
+    // Groq receives facts derived from these files, not their raw contents.
+    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 2/7: Extracting code facts and dependencies...');
+    const files = await github.fetchRepositoryScanFiles(token, owner, repo, defaultBranch);
+    const facts = extractRepositoryFacts(files);
+
+    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 3/7: Running deterministic rules engine...');
     const hits = runDeterministicChecks({ files });
     
     // Baseline score calculation
-    const initialLLM = { security: 100, reliability: 100, observability: 100, performance: 100, deployment: 100 };
-    const clampedResult = applyPenalties(initialLLM, hits);
-    const overallScore = Math.round(
-      (clampedResult.dimensions.security * 0.30) +
-      (clampedResult.dimensions.reliability * 0.25) +
-      (clampedResult.dimensions.observability * 0.15) +
-      (clampedResult.dimensions.performance * 0.15) +
-      (clampedResult.dimensions.deployment * 0.15)
-    );
+    const deterministicDimensions = scoreFromFacts(hits);
+    const fallbackDimensions = { security: 80, reliability: 80, observability: 80, performance: 80, deployment: 80 };
+    const overallScore = calculateOverallScore(deterministicDimensions);
 
     // Update repository current score
     await db.updateRepoScore(repoId, overallScore);
@@ -754,34 +765,44 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
     // Save Baseline PR #0 Scan record in D1 so the dashboard is immediately populated
     const baselinePrId = `${repoFullName}/pull/0`;
     
-    // Query Groq for baseline analysis of priority files (without a PR diff)
-    let baselineAnalysis;
+    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 4/7: Recalling historical memories from Parcle...');
+    const baselineMemories = await parcle.recallByRepo(repoFullName, 3);
+
+    // Query Groq for baseline analysis using compact facts only.
+    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 5/7: Analyzing codebase architecture with Groq reasoning...');
+    let baselineAnalysis: AnalysisResult;
     try {
-      baselineAnalysis = await groq.analyzePR(
-        repoFullName,
-        0,
-        `Baseline Posture Scan (${defaultBranch})`,
-        '', // No diff
-        files,
-        [] // No memories
-      );
+      baselineAnalysis = await groq.analyzeBaseline({
+        repoName: repoFullName,
+        branch: defaultBranch,
+        facts,
+        dimensions: deterministicDimensions,
+        hits,
+        memories: baselineMemories
+      });
     } catch (e) {
       console.error(`Groq baseline analysis query failed:`, e);
       baselineAnalysis = {
-        dimensions: initialLLM,
-        risks: [],
+        dimensions: {
+          security: deterministicDimensions.security ?? 80,
+          reliability: deterministicDimensions.reliability ?? 80,
+          observability: deterministicDimensions.observability ?? 80,
+          performance: deterministicDimensions.performance ?? 80,
+          deployment: deterministicDimensions.deployment ?? 80
+        },
+        risks: hits.map(hit => ({
+          id: hit.id,
+          title: hit.title,
+          location: hit.dimension,
+          why: hit.description,
+          severity: (hit.penalty >= 15 ? 'warning' : 'info') as 'warning' | 'info'
+        })),
         summary: 'Baseline posture scan computed deterministic rules checks.'
       };
     }
 
     const baselineClamped = applyPenalties(baselineAnalysis.dimensions, hits);
-    const baselineOverallScore = Math.round(
-      (baselineClamped.dimensions.security * 0.30) +
-      (baselineClamped.dimensions.reliability * 0.25) +
-      (baselineClamped.dimensions.observability * 0.15) +
-      (baselineClamped.dimensions.performance * 0.15) +
-      (baselineClamped.dimensions.deployment * 0.15)
-    );
+    const baselineOverallScore = calculateOverallScore(baselineClamped.dimensions);
 
     await db.upsertPR({
       id: baselinePrId,
@@ -825,6 +846,15 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
       });
     }
 
+    for (const hit of hits) {
+      await parcle.storePattern(
+        `[Baseline] ${hit.title}: ${hit.description} Dimension ${hit.dimension} lost ${hit.penalty} points. Scanned ${facts.scannedFileCount} files.`,
+        hit.id,
+        repoFullName,
+        { prNumber: 0, tags: ['baseline', hit.dimension] }
+      );
+    }
+
     // Post the Baseline Report as a GitHub Issue in the repository (Option A)
     try {
       await github.createBaselineReportIssue(
@@ -856,6 +886,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
         const commitPrId = `${repoFullName}/pull/${commitPrNumber}`;
         const commitPrTitle = `Commit [${shortSha}]: ${commitMessage}`;
 
+        const progressMessage = `Stage 6/7: Backfilling history - scanning commit [${shortSha}] ("${commitMessage}")...`;
+        await db.updateRepoScanStatus(repoId, 'scanning', progressMessage);
         console.log(`Backfilling commit scan ${shortSha} ("${commitMessage}")...`);
 
         try {
@@ -874,21 +906,23 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
 
           // Run checks
           const commitHits = runDeterministicChecks({ files: commitFiles, diff });
+          const commitFacts = extractRepositoryFacts(commitFiles);
 
           // Groq analysis
-          let commitAnalysis;
+          let commitAnalysis: AnalysisResult;
           try {
             commitAnalysis = await groq.analyzePR(
               repoFullName,
               commitPrNumber,
               commitPrTitle,
               diff,
-              commitFiles,
+              commitFacts,
+              commitHits,
               []
             );
           } catch (e) {
             commitAnalysis = {
-              dimensions: initialLLM,
+              dimensions: fallbackDimensions,
               risks: [],
               summary: 'Commit scan completed deterministic checks.'
             };
@@ -973,6 +1007,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
       const headSha = pr.head.sha;
       const prId = `${repoFullName}/pull/${prNumber}`;
 
+      const progressMessage = `Stage 6/7: Backfilling history - scanning PR #${prNumber} ("${prTitle}")...`;
+      await db.updateRepoScanStatus(repoId, 'scanning', progressMessage);
       console.log(`Backfilling PR #${prNumber} ("${prTitle}") at SHA ${headSha}...`);
 
       try {
@@ -984,6 +1020,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
 
         // Run Deterministic checks
         const prHits = runDeterministicChecks({ files: prFiles, diff });
+        const prFacts = extractRepositoryFacts(prFiles);
 
         // Memory Recall loop
         const patternMatches = await Promise.all(
@@ -996,7 +1033,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
 
         // Reasoning loop (Groq)
         const recalledMemoriesList = matchedHistory.flatMap(m => m.memories);
-        const analysis = await groq.analyzePR(repoFullName, prNumber, prTitle, diff, prFiles, recalledMemoriesList);
+        const analysis = await groq.analyzePR(repoFullName, prNumber, prTitle, diff, prFacts, prHits, recalledMemoriesList);
 
         // Apply clamping
         const clamped = applyPenalties(analysis.dimensions, prHits);
@@ -1067,8 +1104,17 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
       }
     }
 
+    await db.updateRepoScanStatus(repoId, 'completed', 'Scan completed successfully.');
     console.log(`Repository sync for ${repoFullName} completed successfully.`);
   } catch (err) {
     console.error(`Repository sync failed for ${repoFullName}:`, err);
+    try {
+      const repoObj = await db.getRepo(owner, repo);
+      if (repoObj) {
+        await db.updateRepoScanStatus(repoObj.id, 'failed', `Scan failed: ${err instanceof Error ? err.message : String(err)}`);
+      }
+    } catch (dbErr) {
+      console.error('Failed to write failure status to DB:', dbErr);
+    }
   }
 }

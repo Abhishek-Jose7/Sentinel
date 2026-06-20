@@ -10,6 +10,10 @@ document.addEventListener('DOMContentLoaded', () => {
     isPro: false
   };
 
+  // Polling tracker for active scanning
+  let activePollInterval = null;
+  let lastLoggedMessage = '';
+
   // DOM Elements
   const el = {
     repoList: document.getElementById('repo-list'),
@@ -63,7 +67,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function clampScore(value) {
     const numeric = Number(value);
-    if (!Number.isFinite(numeric)) return 0;
+    if (!Number.isFinite(numeric) || value === null || value === undefined) return null;
     return Math.max(0, Math.min(100, numeric));
   }
 
@@ -239,30 +243,19 @@ document.addEventListener('DOMContentLoaded', () => {
     if (el.btnSyncRepo) {
       el.btnSyncRepo.addEventListener('click', async () => {
         if (!state.selectedRepo) return;
-        const btn = el.btnSyncRepo;
-        const originalText = btn.innerHTML;
-        
-        btn.disabled = true;
-        btn.innerHTML = '🔍 Scanning...';
         
         try {
           const res = await authFetch(`/api/repos/${state.selectedRepo.owner}/${state.selectedRepo.name}/sync`, {
             method: 'POST'
           });
-          const data = await res.json();
           if (res.ok) {
-            alert('Scan queued successfully. Repository baseline and commits are analyzing in the background. Dashboard will reload in 5 seconds.');
-            setTimeout(() => {
-              loadRepository(state.selectedRepo.owner, state.selectedRepo.name);
-            }, 5000);
+            startScanPolling(state.selectedRepo.owner, state.selectedRepo.name);
           } else {
+            const data = await res.json();
             alert(`Scan failed: ${data.error || 'Unknown error'}`);
           }
         } catch (err) {
           alert('Failed to connect to scan endpoint.');
-        } finally {
-          btn.disabled = false;
-          btn.innerHTML = originalText;
         }
       });
     }
@@ -275,30 +268,31 @@ document.addEventListener('DOMContentLoaded', () => {
         const repo = el.syncRepoInput.value.trim();
         if (!owner || !repo) return;
 
-        const btn = el.btnEmptySync;
-        const originalText = btn.innerHTML;
-        
-        btn.disabled = true;
-        btn.innerHTML = '🔍 Scanning...';
-
         try {
           const res = await authFetch(`/api/repos/${owner}/${repo}/sync`, {
             method: 'POST'
           });
-          const data = await res.json();
           if (res.ok) {
-            alert('Repository import and scan queued successfully. Baseline scan and commits will backfill in the background. The dashboard will load in 5 seconds.');
-            setTimeout(async () => {
-              await loadRepositories();
-            }, 5000);
+            // Transition immediately to dashboard layout in scanning state
+            el.emptyView.style.display = 'none';
+            el.dashboardView.style.display = 'flex';
+            el.currentRepoTitle.textContent = `${owner}/${repo}`;
+            
+            // Set basic values during transition
+            el.proBadge.textContent = 'BASIC';
+            el.proBadge.className = 'badge';
+            el.btnActivateModal.style.display = 'block';
+            el.memoryLockBadge.textContent = 'Pro Locked';
+            el.memoryLockBadge.className = 'badge badge-memory';
+            showNoPRsState();
+
+            startScanPolling(owner, repo);
           } else {
+            const data = await res.json();
             alert(`Import failed: ${data.error || 'Unknown error'}`);
           }
         } catch (err) {
           alert('Failed to connect to scan endpoint.');
-        } finally {
-          btn.disabled = false;
-          btn.innerHTML = originalText;
         }
       });
     }
@@ -339,11 +333,20 @@ document.addEventListener('DOMContentLoaded', () => {
       populatePRSelector();
       loadRepoMemories(owner, name);
 
-      if (data.pullRequests.length > 0) {
-        // Load latest scan
-        loadPRScan(owner, name, data.pullRequests[0].pr_number);
+      // Handle ongoing scan status immediately on load
+      if (data.repository.scan_status === 'scanning') {
+        startScanPolling(owner, name);
       } else {
-        showNoPRsState();
+        stopScanPolling();
+        const scanHud = document.getElementById('live-scan-hud');
+        if (scanHud) scanHud.style.display = 'none';
+
+        if (data.pullRequests.length > 0) {
+          // Load latest scan
+          loadPRScan(owner, name, data.pullRequests[0].pr_number);
+        } else {
+          showNoPRsState();
+        }
       }
     } catch (err) {
       console.error('Error loading repository details:', err);
@@ -376,7 +379,132 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
-  // 4. Renderers
+  // 4. Polling Visualizer Logic (Live Scanning HUD)
+  function startScanPolling(owner, name) {
+    if (activePollInterval) return;
+
+    const scanHud = document.getElementById('live-scan-hud');
+    const logsEl = document.getElementById('live-scan-logs');
+    const bar = document.getElementById('live-scan-progress-bar');
+    const percentText = document.getElementById('live-scan-percent');
+
+    if (scanHud) scanHud.style.display = 'block';
+    if (logsEl) logsEl.innerHTML = '';
+    if (bar) bar.style.width = '0%';
+    if (percentText) percentText.textContent = '0%';
+    
+    lastLoggedMessage = '';
+
+    // Disable triggers during scan
+    if (el.btnSyncRepo) {
+      el.btnSyncRepo.disabled = true;
+      el.btnSyncRepo.innerHTML = '🔍 Scanning...';
+    }
+    if (el.btnEmptySync) {
+      el.btnEmptySync.disabled = true;
+      el.btnEmptySync.innerHTML = '🔍 Scanning...';
+    }
+
+    appendTerminalLog('SYSTEM', `Spawning Sentinel Code Analysis Agent...`, 'stage');
+
+    activePollInterval = setInterval(async () => {
+      try {
+        const res = await authFetch(`/api/repos/${owner}/${name}`);
+        if (!res.ok) throw new Error('Polling error');
+        const data = await res.json();
+
+        const repo = data.repository;
+        const status = repo.scan_status || 'idle';
+        const msg = repo.scan_message || '';
+
+        // Calculate progress percentage based on 7 pipeline stages
+        let pct = 0;
+        if (msg.includes('Stage 1/7')) pct = 15;
+        else if (msg.includes('Stage 2/7')) pct = 30;
+        else if (msg.includes('Stage 3/7')) pct = 45;
+        else if (msg.includes('Stage 4/7')) pct = 60;
+        else if (msg.includes('Stage 5/7')) pct = 75;
+        else if (msg.includes('Stage 6/7')) pct = 90;
+        else if (status === 'completed') pct = 100;
+
+        if (bar) bar.style.width = `${pct}%`;
+        if (percentText) percentText.textContent = `${pct}%`;
+
+        if (msg && msg !== lastLoggedMessage) {
+          lastLoggedMessage = msg;
+          let styleClass = 'info';
+          if (msg.includes('Rule Hits') || msg.includes('risks')) styleClass = 'warning';
+          if (msg.includes('failed') || msg.includes('Error')) styleClass = 'error';
+          appendTerminalLog('AGENT', msg, styleClass);
+        }
+
+        if (status === 'completed') {
+          appendTerminalLog('SUCCESS', 'Posture verification completed successfully!', 'success');
+          stopScanPolling();
+
+          // Reload repository details to update findings
+          state.selectedRepo = repo;
+          state.pullRequests = data.pullRequests;
+          state.isPro = !!repo.is_pro;
+
+          setTimeout(() => {
+            if (scanHud) scanHud.style.display = 'none';
+            updateDashboardHeader();
+            populatePRSelector();
+            loadRepoMemories(owner, name);
+            if (data.pullRequests.length > 0) {
+              loadPRScan(owner, name, data.pullRequests[0].pr_number);
+            }
+            loadRepositories(repo.id);
+          }, 1800);
+
+        } else if (status === 'failed') {
+          appendTerminalLog('ERROR', `Scan aborted: ${msg}`, 'error');
+          stopScanPolling();
+
+          setTimeout(() => {
+            if (scanHud) scanHud.style.display = 'none';
+            alert(`Code scan failed: ${msg}`);
+            loadRepository(owner, name);
+            loadRepositories(repo.id);
+          }, 2000);
+        }
+
+      } catch (err) {
+        console.error('Scanning poll failure:', err);
+      }
+    }, 1500);
+  }
+
+  function stopScanPolling() {
+    if (activePollInterval) {
+      clearInterval(activePollInterval);
+      activePollInterval = null;
+    }
+    if (el.btnSyncRepo) {
+      el.btnSyncRepo.disabled = false;
+      el.btnSyncRepo.innerHTML = '🔍 Scan Codebase';
+    }
+    if (el.btnEmptySync) {
+      el.btnEmptySync.disabled = false;
+      el.btnEmptySync.innerHTML = 'Import & Analyze Codebase';
+    }
+  }
+
+  function appendTerminalLog(type, message, styleClass = 'info') {
+    const logsEl = document.getElementById('live-scan-logs');
+    if (!logsEl) return;
+
+    const timeStr = new Date().toLocaleTimeString();
+    const logItem = document.createElement('div');
+    logItem.className = `log-line ${styleClass}`;
+    logItem.innerHTML = `<span class="timestamp">[${timeStr}]</span> <span class="log-tag">[${type}]</span> ${escapeHtml(message)}`;
+    
+    logsEl.appendChild(logItem);
+    logsEl.scrollTop = logsEl.scrollHeight;
+  }
+
+  // 5. Renderers
   function renderRepoList(activeId = null) {
     el.repoList.innerHTML = '';
     
@@ -388,17 +516,22 @@ document.addEventListener('DOMContentLoaded', () => {
       const proBadge = repo.is_pro ? '<span class="repo-pro-badge">PRO</span>' : '';
       const repoScore = clampScore(repo.current_score);
       
-      // Select score classification
-      let scoreClass = 'high';
-      if (repoScore < 70) scoreClass = 'low';
-      else if (repoScore < 85) scoreClass = 'med';
+      let scoreText = '--/100';
+      let scoreClass = 'unscanned';
+      
+      if (repoScore !== null) {
+        scoreText = `${repoScore}/100`;
+        if (repoScore >= 85) scoreClass = 'high';
+        else if (repoScore >= 70) scoreClass = 'med';
+        else scoreClass = 'low';
+      }
 
       li.innerHTML = `
         <div class="repo-icon">📦</div>
         <div class="repo-details">
           <div class="repo-name">${escapeHtml(repo.name)} ${proBadge}</div>
         </div>
-        <div class="repo-score ${scoreClass}">${repoScore}/100</div>
+        <div class="repo-score ${scoreClass}">${scoreText}</div>
       `;
 
       li.addEventListener('click', () => {
@@ -448,12 +581,16 @@ document.addEventListener('DOMContentLoaded', () => {
     state.pullRequests.forEach(pr => {
       const opt = document.createElement('option');
       opt.value = pr.pr_number;
+      
+      const prScore = clampScore(pr.overall_score);
+      const scoreStr = prScore !== null ? `Score: ${prScore}` : 'unscanned';
+
       if (pr.pr_number === 0) {
-        opt.text = `Baseline Scan - Score: ${clampScore(pr.overall_score)}`;
+        opt.text = `Baseline Scan - ${scoreStr}`;
       } else if (pr.pr_number < 0) {
-        opt.text = `${pr.title} - Score: ${clampScore(pr.overall_score)}`;
+        opt.text = `${pr.title} - ${scoreStr}`;
       } else {
-        opt.text = `PR #${pr.pr_number} - Score: ${clampScore(pr.overall_score)}`;
+        opt.text = `PR #${pr.pr_number} - ${scoreStr}`;
       }
       if (state.selectedPR && pr.pr_number === state.selectedPR.pr_number) {
         opt.selected = true;
@@ -467,31 +604,49 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // 1. Overall Score Ring Gauge
     const score = clampScore(pr.overall_score);
-    el.scoreValue.textContent = score;
     
-    const circumference = 314; // 2 * pi * r (r=50)
-    const offset = circumference - (circumference * score) / 100;
-    el.scoreRing.style.strokeDashoffset = offset;
-
-    // Ring Color Grading
-    if (score >= 85) {
-      el.scoreRing.style.stroke = 'var(--success)';
-      el.scoreRing.style.filter = 'drop-shadow(0 0 6px rgba(16, 185, 129, 0.4))';
-      el.scoreStatus.textContent = 'EXCELLENT';
-      el.scoreStatus.style.color = 'var(--success)';
-    } else if (score >= 70) {
-      el.scoreRing.style.stroke = 'var(--warning)';
-      el.scoreRing.style.filter = 'drop-shadow(0 0 6px rgba(245, 158, 11, 0.4))';
-      el.scoreStatus.textContent = 'WARN';
-      el.scoreStatus.style.color = 'var(--warning)';
+    const circumference = 326; // 2 * pi * r (r=52)
+    
+    if (score === null) {
+      el.scoreValue.textContent = '--';
+      el.scoreRing.style.strokeDashoffset = circumference;
+      el.scoreStatus.textContent = 'UNSCANNED';
+      el.scoreStatus.className = 'score-status-badge';
+      el.scoreStatus.style.background = 'rgba(255,255,255,0.03)';
+      el.scoreStatus.style.color = 'var(--text-muted)';
+      el.scoreRing.style.stroke = 'var(--text-muted)';
+      el.scoreRing.style.filter = 'none';
     } else {
-      el.scoreRing.style.stroke = 'var(--error)';
-      el.scoreRing.style.filter = 'drop-shadow(0 0 6px rgba(239, 68, 68, 0.4))';
-      el.scoreStatus.textContent = 'CRITICAL POSTURE';
-      el.scoreStatus.style.color = 'var(--error)';
+      el.scoreValue.textContent = score;
+      const offset = circumference - (circumference * score) / 100;
+      el.scoreRing.style.strokeDashoffset = offset;
+
+      // Ring Color Grading
+      if (score >= 85) {
+        el.scoreRing.style.stroke = 'var(--success)';
+        el.scoreRing.style.filter = 'drop-shadow(0 0 8px var(--success-glow))';
+        el.scoreStatus.textContent = 'EXCELLENT';
+        el.scoreStatus.className = 'score-status-badge high';
+        el.scoreStatus.style.background = 'var(--success-bg)';
+        el.scoreStatus.style.color = 'var(--success)';
+      } else if (score >= 70) {
+        el.scoreRing.style.stroke = 'var(--warning)';
+        el.scoreRing.style.filter = 'drop-shadow(0 0 8px var(--warning-glow))';
+        el.scoreStatus.textContent = 'WARN';
+        el.scoreStatus.className = 'score-status-badge med';
+        el.scoreStatus.style.background = 'var(--warning-bg)';
+        el.scoreStatus.style.color = 'var(--warning)';
+      } else {
+        el.scoreRing.style.stroke = 'var(--error)';
+        el.scoreRing.style.filter = 'drop-shadow(0 0 8px var(--error-glow))';
+        el.scoreStatus.textContent = 'CRITICAL POSTURE';
+        el.scoreStatus.className = 'score-status-badge low';
+        el.scoreStatus.style.background = 'var(--error-bg)';
+        el.scoreStatus.style.color = 'var(--error)';
+      }
     }
 
-    // 2. Summary
+    // 2. Summary Header
     if (pr.pr_number === 0) {
       el.selectedPRTitle.textContent = pr.title;
     } else if (pr.pr_number < 0) {
@@ -500,44 +655,48 @@ document.addEventListener('DOMContentLoaded', () => {
       el.selectedPRTitle.textContent = `PR #${pr.pr_number}: ${pr.title}`;
     }
     
-    // Construct summary from risks / severity
-    const criticalCount = risks.filter(r => r.severity === 'critical').length;
-    const warningCount = risks.filter(r => r.severity === 'warning').length;
-    
-    let summaryText = `Sentinel evaluated these PR changes and calculated a posture score of <strong>${score}/100</strong>. `;
-    if (criticalCount > 0) {
-      summaryText += `The reasoning engine predicted <strong>${criticalCount} critical risk(s)</strong> that could cause production instability. `;
-    } else if (warningCount > 0) {
-      summaryText += `Sentinel identified <strong>${warningCount} warning(s)</strong> within the PR diff. `;
+    if (score === null) {
+      el.analysisSummary.innerHTML = `No audit reports found. Click the <strong>Scan Codebase</strong> trigger above to generate scores and failure predictions.`;
     } else {
-      summaryText += `No significant risks were predicted in the code changes. `;
-    }
-    summaryText += `Verify the rule detections and annotations below.`;
-    
-    // Dynamic Score Calculation Report
-    const sec = clampScore(pr.security_score !== undefined ? pr.security_score : 100);
-    const rel = clampScore(pr.reliability_score !== undefined ? pr.reliability_score : 100);
-    const obs = clampScore(pr.observability_score !== undefined ? pr.observability_score : 100);
-    const perf = clampScore(pr.performance_score !== undefined ? pr.performance_score : 100);
-    const dep = clampScore(pr.deployment_score !== undefined ? pr.deployment_score : 100);
+      // Construct summary from risks / severity
+      const criticalCount = risks.filter(r => r.severity === 'critical').length;
+      const warningCount = risks.filter(r => r.severity === 'warning').length;
+      
+      let summaryText = `Sentinel evaluated these PR changes and calculated a posture score of <strong>${score}/100</strong>. `;
+      if (criticalCount > 0) {
+        summaryText += `The reasoning engine predicted <strong>${criticalCount} critical risk(s)</strong> that could cause production instability. `;
+      } else if (warningCount > 0) {
+        summaryText += `Sentinel identified <strong>${warningCount} warning(s)</strong> within the PR diff. `;
+      } else {
+        summaryText += `No significant risks were predicted in the code changes. `;
+      }
+      summaryText += `Verify the rule detections and annotations below.`;
+      
+      // Dynamic Score Calculation Report
+      const sec = pr.security_score !== undefined ? pr.security_score : 100;
+      const rel = pr.reliability_score !== undefined ? pr.reliability_score : 100;
+      const obs = pr.observability_score !== undefined ? pr.observability_score : 100;
+      const perf = pr.performance_score !== undefined ? pr.performance_score : 100;
+      const dep = pr.deployment_score !== undefined ? pr.deployment_score : 100;
 
-    let scoreExplanation = `<div class="score-explanation-report" style="margin-top: 16px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 16px;">`;
-    scoreExplanation += `<strong>🛡️ Score Calculation Report:</strong><br/>`;
-    scoreExplanation += `The overall health score is a weighted combination of five postures: <br/>`;
-    scoreExplanation += `<span style="font-family: monospace; color: var(--primary);">Overall Score = (Security × 30%) + (Reliability × 25%) + (Observability × 15%) + (Performance × 15%) + (Deployment × 15%)</span><br/>`;
-    scoreExplanation += `Specifically: <span style="font-family: monospace;">(${sec} × 0.3) + (${rel} × 0.25) + (${obs} × 0.15) + (${perf} × 0.15) + (${dep} × 0.15) = <strong>${score}/100</strong></span>.<br/>`;
+      let scoreExplanation = `<div class="score-explanation-report" style="margin-top: 16px; font-size: 13px; color: var(--text-muted); line-height: 1.6; border-top: 1px dashed var(--border-hud); padding-top: 16px;">`;
+      scoreExplanation += `<strong>🛡️ Score Calculation Report:</strong><br/>`;
+      scoreExplanation += `The overall health score is a weighted combination of five postures: <br/>`;
+      scoreExplanation += `<span style="font-family: 'JetBrains Mono', monospace; color: var(--primary);">Overall Score = (Security × 30%) + (Reliability × 25%) + (Observability × 15%) + (Performance × 15%) + (Deployment × 15%)</span><br/>`;
+      scoreExplanation += `Specifically: <span style="font-family: 'JetBrains Mono', monospace;">(${sec} × 0.3) + (${rel} × 0.25) + (${obs} × 0.15) + (${perf} × 0.15) + (${dep} × 0.15) = <strong>${score}/100</strong></span>.<br/>`;
 
-    if (ruleHits && ruleHits.length > 0) {
-      scoreExplanation += `<div style="margin-top: 8px; color: var(--error);">⚠️ <strong>Deterministic Clamping Applied:</strong> `;
-      const penaltyDetails = ruleHits.map(h => `"${escapeHtml(h.title || h.rule_id)}" (-${h.penalty} points to ${escapeHtml(h.dimension)})`).join(', ');
-      scoreExplanation += `The overall posture was capped or reduced by deterministic checks: ${penaltyDetails}.`;
+      if (ruleHits && ruleHits.length > 0) {
+        scoreExplanation += `<div style="margin-top: 8px; color: var(--error);">⚠️ <strong>Deterministic Clamping Applied:</strong> `;
+        const penaltyDetails = ruleHits.map(h => `"${escapeHtml(h.title || h.rule_id)}" (-${h.penalty} points to ${escapeHtml(h.dimension)})`).join(', ');
+        scoreExplanation += `The overall posture was capped or reduced by deterministic checks: ${penaltyDetails}.`;
+        scoreExplanation += `</div>`;
+      } else {
+        scoreExplanation += `<div style="margin-top: 8px; color: var(--success);">✓ <strong>Perfect Compliance:</strong> No deterministic rule violations or point deductions were flagged in this scan.</div>`;
+      }
       scoreExplanation += `</div>`;
-    } else {
-      scoreExplanation += `<div style="margin-top: 8px; color: var(--success);">✓ <strong>Perfect Compliance:</strong> No deterministic rule violations or point deductions were flagged in this scan.</div>`;
-    }
-    scoreExplanation += `</div>`;
 
-    el.analysisSummary.innerHTML = summaryText + scoreExplanation;
+      el.analysisSummary.innerHTML = summaryText + scoreExplanation;
+    }
 
     // 3. Render Dimensions Postures
     const dims = [
@@ -550,9 +709,10 @@ document.addEventListener('DOMContentLoaded', () => {
 
     el.dimensionsContainer.innerHTML = '';
     dims.forEach(d => {
-      const scoreVal = pr[`${d.key}_score`] !== undefined ? clampScore(pr[`${d.key}_score`]) : 100;
+      const rawVal = pr[`${d.key}_score`];
+      const scoreVal = rawVal !== undefined && rawVal !== null ? clampScore(rawVal) : 100;
       const dimCard = document.createElement('div');
-      dimCard.className = 'card dimension-card';
+      dimCard.className = 'dimension-card';
       
       const hits = ruleHits.filter(h => h.dimension === d.key);
       const notesHtml = hits.length > 0
@@ -577,7 +737,7 @@ document.addEventListener('DOMContentLoaded', () => {
     // 4. Render Reasoning / Predicted Risks
     el.risksList.innerHTML = '';
     if (risks.length === 0) {
-      el.risksList.innerHTML = `<div class="empty-state"><p>No predicted risks reported for this pull request.</p></div>`;
+      el.risksList.innerHTML = `<div class="empty-state"><p>No predicted risks reported for this reference.</p></div>`;
     } else {
       risks.forEach(risk => {
         const item = document.createElement('div');
@@ -630,7 +790,6 @@ document.addEventListener('DOMContentLoaded', () => {
         const item = document.createElement('div');
         item.className = 'memory-match-item';
         
-        // Convert timestamp
         const dateStr = m.metadata?.ts 
           ? new Date(m.metadata.ts).toLocaleDateString()
           : 'recent';
@@ -694,13 +853,15 @@ document.addEventListener('DOMContentLoaded', () => {
 
   function showNoPRsState() {
     el.scoreValue.textContent = '--';
-    el.scoreRing.style.strokeDashoffset = 314;
+    el.scoreRing.style.strokeDashoffset = 326;
     el.scoreStatus.textContent = 'NO SCANS';
+    el.scoreStatus.className = 'score-status-badge';
+    el.scoreStatus.style.background = 'rgba(255,255,255,0.03)';
     el.scoreStatus.style.color = 'var(--text-muted)';
     el.selectedPRTitle.textContent = 'No scans performed yet';
-    el.analysisSummary.textContent = 'Post a webhook check to audit this repository.';
-    el.dimensionsContainer.innerHTML = '<div style="grid-column: 1/6; text-align: center; color: var(--text-muted);">No scan dimension data</div>';
-    el.risksList.innerHTML = '<div class="empty-state"><p>Audit queue is empty.</p></div>';
-    el.memoriesPanel.innerHTML = '<div class="empty-state"><p>Audit queue is empty.</p></div>';
+    el.analysisSummary.textContent = 'Run a manual sync scan or post a webhook check to audit this repository.';
+    el.dimensionsContainer.innerHTML = '<div style="grid-column: 1/6; text-align: center; color: var(--text-muted); padding: 24px;">No scan dimension data available. Trigger a codebase scan above.</div>';
+    el.risksList.innerHTML = '<div class="empty-state"><p>Risk queue empty. Trigger scan to populate.</p></div>';
+    el.memoriesPanel.innerHTML = '<div class="empty-state"><p>Memory index empty.</p></div>';
   }
 });

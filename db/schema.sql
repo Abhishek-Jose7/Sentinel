@@ -6,9 +6,11 @@ CREATE TABLE IF NOT EXISTS repositories (
   owner TEXT NOT NULL,
   name TEXT NOT NULL,
   installed_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-  current_score INTEGER DEFAULT 100,
+  current_score INTEGER DEFAULT NULL,
   license_key TEXT,
-  is_pro BOOLEAN DEFAULT 0
+  is_pro BOOLEAN DEFAULT 0,
+  scan_status TEXT DEFAULT 'idle',
+  scan_message TEXT DEFAULT ''
 );
 
 -- Pull Request scans

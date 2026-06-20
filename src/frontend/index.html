@@ -3,60 +3,69 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Sentinel — Enter Pro Dashboard</title>
+  <title>Sentinel — Security & Posture HUD</title>
+  
+  <!-- Modern Premium Typography & Fonts -->
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=Outfit:wght@400;500;600;700;800&family=JetBrains+Mono:wght@400;500&display=swap" rel="stylesheet">
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@300;400;500;600;700&family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+  
+  <!-- CSS Stylesheets -->
   <link rel="stylesheet" href="/styles.css">
+  
+  <!-- Application Logic -->
   <script src="/app.js" defer></script>
 </head>
 <body>
   <div class="app-container">
     
-    <!-- Sidebar -->
+    <!-- Sidebar / Repositories Panel -->
     <aside class="sidebar">
       <div class="brand">
         <div class="logo-icon">🛡️</div>
         <div class="brand-text">
           <h1>SENTINEL</h1>
-          <span>PR Audit & Memory Engine</span>
+          <span>Security & Posture HUD</span>
         </div>
       </div>
       
       <div class="sidebar-section">
-        <h2>AUDITED REPOSITORIES</h2>
+        <h2>Audited Repositories</h2>
         <ul class="repo-list" id="repo-list">
           <li class="loading-item">Loading repositories...</li>
         </ul>
       </div>
 
       <div class="sidebar-footer">
-        <div class="user-badge" id="user-badge-container" style="cursor: pointer;" title="Click to Sign Out">
+        <div class="user-badge" id="user-badge-container" title="Click to Sign Out">
           <div class="user-avatar" id="user-avatar">👤</div>
           <div class="user-info">
             <p class="user-name" id="user-name">Developer Admin</p>
-            <p class="user-role" id="user-role">Lead Integration Eng</p>
+            <p class="user-role" id="user-role">GitHub Session</p>
           </div>
         </div>
       </div>
     </aside>
 
-    <!-- Main Dashboard Pane -->
+    <!-- Main Dashboard HUD -->
     <main class="dashboard-main" id="dashboard-view" style="display: none;">
       
-      <!-- Top header bar -->
-      <header class="top-header">
-        <div class="repo-meta">
+      <!-- HUD Header -->
+      <header class="hud-header">
+        <div class="hud-title-area">
+          <span class="hud-tag">SECURE MONITOR</span>
           <h2 id="current-repo-title">owner/repo</h2>
           <span class="badge" id="pro-badge">BASIC</span>
         </div>
         
-        <div class="header-actions">
-          <button class="btn" id="btn-sync-repo">🔍 Scan Repo</button>
+        <div class="hud-actions">
+          <button class="btn btn-action" id="btn-sync-repo">
+            <span class="icon">🔍</span> Scan Codebase
+          </button>
           <button class="btn btn-pro" id="btn-activate-modal">⚡ Enter Pro</button>
           
-          <div class="pr-selector-wrapper">
-            <label for="pr-select">Scan History:</label>
+          <div class="control-group">
+            <label for="pr-select">AUDIT REF</label>
             <select id="pr-select" class="pr-select">
               <!-- Dynamically populated -->
             </select>
@@ -64,140 +73,179 @@
         </div>
       </header>
 
-      <!-- Main Overview Cards Grid -->
-      <section class="overview-grid">
-        
-        <!-- Score Card Ring -->
-        <div class="card score-card">
-          <h3>Overall Health Score</h3>
-          <div class="gauge-container">
-            <svg class="gauge" viewBox="0 0 120 120">
-              <circle class="gauge-bg" cx="60" cy="60" r="50"></circle>
-              <circle class="gauge-fill" id="score-ring" cx="60" cy="60" r="50" stroke-dasharray="314" stroke-dashoffset="314"></circle>
-            </svg>
-            <div class="gauge-value" id="score-value">--</div>
+      <!-- Live Scan Console (Visible ONLY during scans) -->
+      <section id="live-scan-hud" class="hud-section live-scan-section" style="display: none;">
+        <div class="terminal-container">
+          <div class="terminal-header">
+            <div class="terminal-buttons">
+              <span class="term-btn term-red"></span>
+              <span class="term-btn term-yellow"></span>
+              <span class="term-btn term-green"></span>
+            </div>
+            <div class="terminal-title">sentinel-scan-agent.sh</div>
+            <div class="terminal-status-glow"></div>
           </div>
-          <p class="gauge-label" id="score-status">Calculating...</p>
-        </div>
-
-        <!-- Summary & Positioning -->
-        <div class="card summary-card">
-          <h3>Post-Audit Analysis</h3>
-          <p class="pr-title-label" id="selected-pr-title">--</p>
-          <div class="summary-text" id="analysis-summary">
-            Select a repository scan history on the left to see the Sentinel hybrid audit logs.
-          </div>
-          <div class="positioning-bar">
-            <span>🛡️ Posture Verification:</span> "Sentinel audits what can be verified, and predicts what cannot."
+          <div class="terminal-body">
+            <div class="terminal-progress-row">
+              <span class="term-label">PROGRESS:</span>
+              <div class="term-progress-track">
+                <div id="live-scan-progress-bar" class="term-progress-bar" style="width: 0%;"></div>
+              </div>
+              <span id="live-scan-percent" class="term-percent">0%</span>
+            </div>
+            <div class="terminal-log-feed" id="live-scan-logs">
+              <!-- Appended scan logs -->
+            </div>
           </div>
         </div>
       </section>
 
-      <!-- Scores by Dimension -->
-      <section class="dimensions-section">
+      <!-- Main Overview Metrics -->
+      <section class="overview-section">
+        <div class="hud-metrics-grid">
+          
+          <!-- Posture Score HUD -->
+          <div class="hud-card score-hud-card">
+            <h3>Overall Posture Score</h3>
+            <div class="score-display">
+              <div class="gauge-box">
+                <svg class="hud-gauge" viewBox="0 0 120 120">
+                  <circle class="hud-gauge-bg" cx="60" cy="60" r="52"></circle>
+                  <circle class="hud-gauge-fill" id="score-ring" cx="60" cy="60" r="52" stroke-dasharray="326" stroke-dashoffset="326"></circle>
+                </svg>
+                <div class="gauge-digits">
+                  <span id="score-value">--</span>
+                  <span class="denom">/100</span>
+                </div>
+              </div>
+            </div>
+            <div class="score-status-badge" id="score-status">CALCULATING...</div>
+          </div>
+
+          <!-- Executive Summary -->
+          <div class="hud-card summary-hud-card">
+            <h3>Audit Findings Summary</h3>
+            <div class="summary-details">
+              <h4 id="selected-pr-title">--</h4>
+              <div class="summary-content-text" id="analysis-summary">
+                Select a scan reference to inspect engineering health and risk clamping metrics.
+              </div>
+            </div>
+            <div class="hud-footer-quote">
+              <span class="accent-symbol">//</span> "Sentinel audits what can be verified, and predicts what cannot."
+            </div>
+          </div>
+
+        </div>
+      </section>
+
+      <!-- Dimension Breakdown -->
+      <section class="hud-section">
         <h3>Verify — Dimension Postures & Clamping Notes</h3>
         <div class="dimensions-grid" id="dimensions-container">
           <!-- Dynamically populated dimensions -->
         </div>
       </section>
 
-      <!-- Bottom Columns: Predicted Risks vs Pattern matches -->
-      <div class="analysis-columns">
+      <!-- Risk Predictions & Incidents Split -->
+      <div class="details-split">
         
-        <!-- Reasoning / Predicted Risks -->
-        <section class="analysis-column predictions-col">
+        <!-- Code-Level Warnings -->
+        <section class="hud-section code-warnings-section">
           <h3>Predict — Diff-Level Reasoning</h3>
           <div class="risks-list" id="risks-list">
-            <!-- Dynamically populated -->
+            <!-- Dynamically populated risks -->
           </div>
         </section>
 
-        <!-- Memory Loop / Pattern Match History -->
-        <section class="analysis-column memories-col">
-          <div class="column-header">
+        <!-- Incidents Pattern Matches -->
+        <section class="hud-section code-incidents-section">
+          <div class="section-title-bar">
             <h3>🧠 Structured Pattern Memory</h3>
             <span class="badge badge-memory" id="memory-lock-badge">Pro Locked</span>
           </div>
           <div class="memories-panel" id="memories-panel">
             <div class="empty-state">
-              <p>Activate <strong>Sentinel Pro</strong> to view recurring security matches and historical incident regressions.</p>
+              <p>Activate <strong>Sentinel Pro</strong> to index incident patterns and prevent regression loops.</p>
             </div>
           </div>
         </section>
 
       </div>
 
-      <!-- Repository Parcle Memory Bank -->
-      <section class="repo-memories-section" style="margin-top: 32px; border-top: 1px solid var(--card-border); padding-top: 24px;">
-        <div class="column-header">
+      <!-- Long-Term Parcle Memory Bank -->
+      <section class="hud-section repo-memories-section">
+        <div class="section-title-bar">
           <h3>📦 Repository Parcle Memory Bank (Proof of Memory)</h3>
           <span class="badge badge-memory active" id="repo-memory-count-badge">0 Stored Memories</span>
         </div>
-        <div class="card repo-memories-card" style="margin-top: 16px; padding: 24px; min-height: 120px;">
-          <div class="repo-memories-list" id="repo-memories-list" style="display: flex; flex-direction: column; gap: 12px;">
-            <!-- Dynamically populated repo-wide memories -->
+        <div class="hud-card memories-log-card">
+          <div class="repo-memories-list" id="repo-memories-list">
             <div class="empty-state">
-              <p>No memories stored in Parcle yet. Run a scan to build memory context.</p>
+              <p>Memory ledger empty. Perform a code scan to ingest memories.</p>
             </div>
           </div>
         </div>
       </section>
+
     </main>
 
     <!-- Empty Dashboard State -->
     <main class="dashboard-main empty-dashboard" id="empty-view">
       <div class="empty-dashboard-content">
-        <div class="empty-logo">🛡️</div>
-        <h2>Welcome to Sentinel</h2>
-        <p>No audited repositories detected. Install the Sentinel GitHub App to begin scanning your codebase automatically on every pull request push.</p>
+        <div class="empty-logo-hex">🛡️</div>
+        <h2>Sentinel Guard Active</h2>
+        <p>No scanned repositories found on this account. Set up a repository manually below or hook your GitHub App webhooks to analyze commits automatically.</p>
         
-        <div class="sync-first-repo-box">
-          <h3>🔄 Or Import & Sync Repository Manually</h3>
-          <form id="empty-sync-form" class="empty-sync-form">
-            <div class="input-row">
+        <div class="import-card">
+          <h3>Import & Sync Repository</h3>
+          <form id="empty-sync-form" class="import-form">
+            <div class="form-row-compact">
               <input type="text" id="sync-owner" placeholder="github-owner" required autocomplete="off">
-              <span class="slash">/</span>
+              <span class="form-sep">/</span>
               <input type="text" id="sync-repo" placeholder="repository-name" required autocomplete="off">
             </div>
-            <button type="submit" class="btn btn-primary" id="btn-empty-sync">Import & Sync Repo</button>
+            <button type="submit" class="btn btn-action btn-block" id="btn-empty-sync">Import & Analyze Codebase</button>
           </form>
         </div>
 
-        <div class="mock-setup-box">
-          <h3>🚀 Webhook Payload URL</h3>
-          <code>https://sentinel-worker.hangoutt.workers.dev/webhook</code>
-          <p class="hint">Point your GitHub App webhook URL here to listen for real-time audit triggers.</p>
+        <div class="terminal-info-card">
+          <h3>GitHub App Webhook URL</h3>
+          <div class="code-copy-row">
+            <code>https://sentinel-worker.hangoutt.workers.dev/webhook</code>
+          </div>
+          <p class="desc">Configure this URL as the webhook address in your GitHub App settings to trigger automated PR audits on push.</p>
         </div>
       </div>
     </main>
 
-    <!-- Activate Pro Modal -->
+    <!-- Activation Modal Overlay -->
     <div class="modal-overlay" id="pro-modal">
-      <div class="modal">
+      <div class="modal-box">
         <button class="modal-close" id="btn-close-modal">&times;</button>
         <div class="modal-icon">⚡</div>
-        <h2>Activate Sentinel Pro</h2>
-        <p>Unlocks the complete <strong>Recall → Reason → Store</strong> memory loop, revealing historical pattern matching and incident prevention timelines.</p>
+        <h2>Unlock Sentinel Pro</h2>
+        <p>Unlock structured recall-reason-store loops, historical patterns, and incident memory backfills.</p>
         
-        <form id="pro-form" class="pro-form">
-          <div class="form-group">
-            <label for="license-key">Sentinel Pro License Key</label>
+        <form id="pro-form" class="modal-form">
+          <div class="form-field">
+            <label for="license-key">LICENSE KEY</label>
             <input type="text" id="license-key" required placeholder="SENTINEL-PRO-XXXXX-XXXXX" autocomplete="off">
             <span class="form-error" id="form-error"></span>
           </div>
-          <button type="submit" class="btn btn-primary btn-block">Activate License</button>
+          <button type="submit" class="btn btn-pro btn-block">Activate License Key</button>
         </form>
       </div>
     </div>
 
-    <!-- GitHub OAuth Login Overlay -->
+    <!-- Login Overlay -->
     <div class="login-overlay" id="login-overlay">
       <div class="login-box">
-        <div class="logo-icon" style="font-size: 48px; margin-bottom: 16px;">🛡️</div>
-        <h2>Welcome to Sentinel</h2>
-        <p>Sign in with your GitHub account to access your repositories and PR audits securely.</p>
-        <button id="btn-github-login" class="btn btn-primary btn-block" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
-          Sign in with GitHub
+        <div class="logo-shield">🛡️</div>
+        <h2>SENTINEL SECURE LOG-IN</h2>
+        <p>This console requires an active GitHub Developer Session to query repository code trees and pull request diffs.</p>
+        <button id="btn-github-login" class="btn btn-action btn-block">
+          <span class="btn-icon">🐙</span> Sign in with GitHub Auth
         </button>
       </div>
     </div>

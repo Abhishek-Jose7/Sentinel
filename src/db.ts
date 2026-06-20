@@ -142,7 +142,7 @@ export class DbHelper {
         security_score, reliability_score, observability_score, performance_score, deployment_score,
         thought_process, created_at, updated_at
        ) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET 
          title=excluded.title, 
          state=excluded.state, 

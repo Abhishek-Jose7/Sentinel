@@ -100,24 +100,23 @@
         </div>
       </section>
 
-      <!-- Main Overview Metrics -->
-      <section class="overview-section">
-        <div class="hud-metrics-grid">
+      <!-- Two-Pane Grid Layout Wrapper -->
+      <div class="dashboard-panes-wrapper">
+        
+        <!-- Left Pane: Metrics, Summary, and Dimensions -->
+        <div class="dashboard-pane pane-left">
           
-          <!-- Posture Score HUD -->
+          <!-- Stark Posture Score Card -->
           <div class="hud-card score-hud-card">
             <h3>Overall Posture Score</h3>
-            <div class="score-display">
-              <div class="gauge-box">
-                <svg class="hud-gauge" viewBox="0 0 120 120">
-                  <circle class="hud-gauge-bg" cx="60" cy="60" r="52"></circle>
-                  <circle class="hud-gauge-fill" id="score-ring" cx="60" cy="60" r="52" stroke-dasharray="326" stroke-dashoffset="326"></circle>
-                </svg>
-                <div class="gauge-digits">
-                  <span id="score-value">--</span>
-                  <span class="denom">/100</span>
-                </div>
-              </div>
+            <div class="score-display-flat">
+              <span id="score-value">--</span>
+              <span class="score-denom">/100</span>
+              
+              <!-- Hidden SVG circle to prevent JS DOM errors -->
+              <svg style="display: none;">
+                <circle id="score-ring" cx="60" cy="60" r="52"></circle>
+              </svg>
             </div>
             <div class="score-status-badge" id="score-status">CALCULATING...</div>
           </div>
@@ -131,72 +130,70 @@
                 Select a scan reference to inspect engineering health and risk clamping metrics.
               </div>
             </div>
-            <div class="hud-footer-quote">
-              <span class="accent-symbol">//</span> "Sentinel audits what can be verified, and predicts what cannot."
-            </div>
           </div>
 
+          <!-- Dimension Breakdown -->
+          <section class="hud-section dimensions-section">
+            <h3>Verify — Dimension Postures</h3>
+            <div class="dimensions-grid" id="dimensions-container">
+              <!-- Dynamically populated dimensions -->
+            </div>
+          </section>
+
+        </div>
+
+        <!-- Right Pane: LLM Thought process, warnings, and memories -->
+        <div class="dashboard-pane pane-right">
+          
           <!-- LLM Thought Process Console -->
-          <div class="hud-card thought-hud-card" style="grid-column: 1 / 3; display: flex; flex-direction: column; gap: 12px; background: linear-gradient(135deg, rgba(245, 158, 11, 0.02) 0%, rgba(14, 18, 31, 0.6) 100%); border-color: rgba(245, 158, 11, 0.15);">
-            <h3 style="color: var(--accent-pro); display: flex; align-items: center; gap: 8px;">
-              <span>🧠 LLM Reasoning & thought process</span>
-            </h3>
-            <div class="thought-process-content" id="thought-process-text" style="font-size: 13px; line-height: 1.7; color: var(--text-normal); font-family: inherit; white-space: pre-line; max-height: 250px; overflow-y: auto; padding-right: 8px;">
-              Initialize scan or select history log reference to display the engine's step-by-step security reasoning.
+          <div class="hud-card thought-hud-card">
+            <h3>🧠 LLM Reasoning & thought process</h3>
+            <div class="thought-process-console">
+              <div class="thought-process-content" id="thought-process-text">
+                Initialize scan or select history log reference to display the engine's step-by-step security reasoning.
+              </div>
             </div>
           </div>
 
-        </div>
-      </section>
-
-      <!-- Dimension Breakdown -->
-      <section class="hud-section">
-        <h3>Verify — Dimension Postures & Clamping Notes</h3>
-        <div class="dimensions-grid" id="dimensions-container">
-          <!-- Dynamically populated dimensions -->
-        </div>
-      </section>
-
-      <!-- Risk Predictions & Incidents Split -->
-      <div class="details-split">
-        
-        <!-- Code-Level Warnings -->
-        <section class="hud-section code-warnings-section">
-          <h3>Predict — Diff-Level Reasoning</h3>
-          <div class="risks-list" id="risks-list">
-            <!-- Dynamically populated risks -->
-          </div>
-        </section>
-
-        <!-- Incidents Pattern Matches -->
-        <section class="hud-section code-incidents-section">
-          <div class="section-title-bar">
-            <h3>🧠 Structured Pattern Memory</h3>
-            <span class="badge badge-memory" id="memory-lock-badge">Pro Locked</span>
-          </div>
-          <div class="memories-panel" id="memories-panel">
-            <div class="empty-state">
-              <p>Activate <strong>Sentinel Pro</strong> to index incident patterns and prevent regression loops.</p>
+          <!-- Code-Level Warnings -->
+          <section class="hud-section code-warnings-section">
+            <h3>Predict — Diff-Level Reasoning</h3>
+            <div class="risks-list" id="risks-list">
+              <!-- Dynamically populated risks -->
             </div>
-          </div>
-        </section>
+          </section>
+
+          <!-- Incidents Pattern Matches -->
+          <section class="hud-section code-incidents-section">
+            <div class="section-title-bar">
+              <h3>🧠 Structured Pattern Memory</h3>
+              <span class="badge badge-memory" id="memory-lock-badge">Pro Locked</span>
+            </div>
+            <div class="memories-panel" id="memories-panel">
+              <div class="empty-state">
+                <p>Activate <strong>Sentinel Pro</strong> to index incident patterns and prevent regression loops.</p>
+              </div>
+            </div>
+          </section>
+
+          <!-- Long-Term Parcle Memory Bank -->
+          <section class="hud-section repo-memories-section">
+            <div class="section-title-bar">
+              <h3>📦 Repository Parcle Memory Bank (Proof of Memory)</h3>
+              <span class="badge badge-memory active" id="repo-memory-count-badge">0 Stored Memories</span>
+            </div>
+            <div class="hud-card memories-log-card">
+              <div class="repo-memories-list" id="repo-memories-list">
+                <div class="empty-state">
+                  <p>Memory ledger empty. Perform a code scan to ingest memories.</p>
+                </div>
+              </div>
+            </div>
+          </section>
+
+        </div>
 
       </div>
-
-      <!-- Long-Term Parcle Memory Bank -->
-      <section class="hud-section repo-memories-section">
-        <div class="section-title-bar">
-          <h3>📦 Repository Parcle Memory Bank (Proof of Memory)</h3>
-          <span class="badge badge-memory active" id="repo-memory-count-badge">0 Stored Memories</span>
-        </div>
-        <div class="hud-card memories-log-card">
-          <div class="repo-memories-list" id="repo-memories-list">
-            <div class="empty-state">
-              <p>Memory ledger empty. Perform a code scan to ingest memories.</p>
-            </div>
-          </div>
-        </div>
-      </section>
 
     </main>
 

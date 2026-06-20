@@ -34,7 +34,7 @@ export class GroqEngine {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = 'llama-3.1-8b-instant') {
+  constructor(apiKey: string, model = 'llama3-8b-8192') {
     this.apiKey = apiKey;
     this.model = model;
   }
@@ -325,29 +325,45 @@ Keep dimensions close to the deterministic scores. Only adjust by at most 5 poin
 
     try {
       const parsed = JSON.parse(cleanText);
-      // Validate schema minimally
-      if (!parsed.dimensions || !parsed.risks) {
-        throw new Error('Parsed response missing dimensions or risks properties');
-      }
       
-      const dims = parsed.dimensions;
+      // Look for dimensions and risks in various casings
+      const rawDims = parsed.dimensions ?? parsed.Dimensions ?? parsed.DIMENSIONS ?? {};
+      const risksList = parsed.risks ?? parsed.Risks ?? parsed.RISKS ?? [];
+
+      const getNumericScore = (val: any, fallback = 100): number => {
+        if (typeof val === 'number') return val;
+        if (typeof val === 'string') {
+          const parsedVal = parseInt(val, 10);
+          return isNaN(parsedVal) ? fallback : parsedVal;
+        }
+        return fallback;
+      };
+
+      const security = rawDims.security ?? rawDims.Security ?? rawDims.SECURITY;
+      const reliability = rawDims.reliability ?? rawDims.Reliability ?? rawDims.RELIABILITY;
+      const observability = rawDims.observability ?? rawDims.Observability ?? rawDims.OBSERVABILITY;
+      const performance = rawDims.performance ?? rawDims.Performance ?? rawDims.PERFORMANCE;
+      const deployment = rawDims.deployment ?? rawDims.Deployment ?? rawDims.DEPLOYMENT;
+
       return {
         dimensions: {
-          security: typeof dims.security === 'number' ? dims.security : 80,
-          reliability: typeof dims.reliability === 'number' ? dims.reliability : 80,
-          observability: typeof dims.observability === 'number' ? dims.observability : 80,
-          performance: typeof dims.performance === 'number' ? dims.performance : 80,
-          deployment: typeof dims.deployment === 'number' ? dims.deployment : 80
+          security: getNumericScore(security, 100),
+          reliability: getNumericScore(reliability, 100),
+          observability: getNumericScore(observability, 100),
+          performance: getNumericScore(performance, 100),
+          deployment: getNumericScore(deployment, 100)
         },
-        risks: Array.isArray(parsed.risks) ? parsed.risks.map((r: any) => ({
-          id: String(r.id || 'unknown-pattern'),
-          title: String(r.title || 'Inferred Risk'),
-          location: String(r.location || 'unknown'),
-          why: String(r.why || ''),
-          severity: ['critical', 'warning', 'info'].includes(r.severity) ? r.severity : 'warning'
+        risks: Array.isArray(risksList) ? risksList.map((r: any) => ({
+          id: String(r.id ?? r.Id ?? r.ID ?? 'unknown-pattern'),
+          title: String(r.title ?? r.Title ?? r.TITLE ?? 'Inferred Risk'),
+          location: String(r.location ?? r.Location ?? r.LOCATION ?? 'unknown'),
+          why: String(r.why ?? r.Why ?? r.WHY ?? ''),
+          severity: ['critical', 'warning', 'info'].includes(String(r.severity ?? '').toLowerCase()) 
+            ? (String(r.severity).toLowerCase() as 'critical' | 'warning' | 'info') 
+            : 'warning'
         })) : [],
-        summary: String(parsed.summary || 'PR analysis completed.'),
-        thought_process: String(parsed.thought_process || 'LLM reasoning successfully completed. Codebase structures and historical patterns mapped against deterministic rule sets.')
+        summary: String(parsed.summary ?? parsed.Summary ?? parsed.SUMMARY ?? 'PR analysis completed.'),
+        thought_process: String(parsed.thought_process ?? parsed.thoughtProcess ?? parsed.ThoughtProcess ?? parsed.THOUGHT_PROCESS ?? 'LLM reasoning successfully completed. Codebase structures and historical patterns mapped against deterministic rule sets.')
       };
     } catch (err) {
       console.error('Failed to parse Groq response JSON:', err, '\nRaw Text:', text);

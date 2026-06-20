@@ -245,7 +245,7 @@ export default {
                     if (!existing) {
                       newReposCount++;
                       if (newReposCount === 1) {
-                        ctx.waitUntil(runRepositorySync(r.owner.login, r.name, env));
+                        ctx.waitUntil(runRepositorySync(r.owner.login, r.name, env, session.accessToken));
                       }
                     }
                   }
@@ -273,10 +273,75 @@ export default {
             const ghRepos = await ghReposRes.json() as any[];
             for (const r of ghRepos) {
               allowedRepoIds.add(r.id);
+              await db.upsertRepo(r.id, r.owner.login, r.name);
             }
+          } else {
+            const errText = await ghReposRes.text();
+            console.error(`GitHub API user/repos failed with status ${ghReposRes.status}: ${errText}`);
           }
         } catch (err) {
           console.error('Error auto-fetching direct user repos:', err);
+        }
+
+        // 3. Extra Fallback: Fetch public repositories for user directly (does not require broad OAuth permissions)
+        try {
+          const publicReposRes = await fetch(`https://api.github.com/users/${session.login}/repos?per_page=100`, {
+            headers: {
+              'Authorization': `token ${session.accessToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Sentinel-App'
+            }
+          });
+
+          if (publicReposRes.ok) {
+            const publicRepos = await publicReposRes.json() as any[];
+            for (const r of publicRepos) {
+              allowedRepoIds.add(r.id);
+              await db.upsertRepo(r.id, r.owner.login, r.name);
+            }
+          } else {
+            const errText = await publicReposRes.text();
+            console.log(`GitHub API public repos fallback returned status ${publicReposRes.status}: ${errText}`);
+          }
+        } catch (err) {
+          console.error('Error auto-fetching public repos fallback:', err);
+        }
+
+        // 4. Org Repos discovery fallback
+        try {
+          const orgsRes = await fetch('https://api.github.com/user/orgs', {
+            headers: {
+              'Authorization': `token ${session.accessToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Sentinel-App'
+            }
+          });
+
+          if (orgsRes.ok) {
+            const orgs = await orgsRes.json() as any[];
+            await Promise.all(orgs.map(async (org: any) => {
+              try {
+                const orgReposRes = await fetch(`https://api.github.com/orgs/${org.login}/repos?per_page=100`, {
+                  headers: {
+                    'Authorization': `token ${session.accessToken}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Sentinel-App'
+                  }
+                });
+                if (orgReposRes.ok) {
+                  const orgRepos = await orgReposRes.json() as any[];
+                  for (const r of orgRepos) {
+                    allowedRepoIds.add(r.id);
+                    await db.upsertRepo(r.id, r.owner.login, r.name);
+                  }
+                }
+              } catch (e) {
+                console.error(`Error auto-fetching repos for org ${org.login}:`, e);
+              }
+            }));
+          }
+        } catch (err) {
+          console.error('Error auto-discovering org installations:', err);
         }
 
         const repos = await db.listRepos();
@@ -512,7 +577,7 @@ export default {
           });
         }
 
-        ctx.waitUntil(runRepositorySync(owner, name, env));
+        ctx.waitUntil(runRepositorySync(owner, name, env, session.accessToken));
         return new Response(JSON.stringify({
           message: 'Scan queued successfully',
           stages: [
@@ -812,28 +877,39 @@ async function fetchDashboardJs(): Promise<string> {
 }
 
 // Background sync worker for already going-on projects (baseline scan + past PR backfill)
-async function runRepositorySync(owner: string, repo: string, env: Env) {
-  if (!env.GITHUB_APP_ID || !env.GITHUB_PRIVATE_KEY) {
-    console.error('GITHUB_APP_ID or GITHUB_PRIVATE_KEY is not defined. Cannot sync.');
-    return;
-  }
-
+async function runRepositorySync(owner: string, repo: string, env: Env, userAccessToken?: string) {
   const db = new DbHelper(env.DB);
-  const github = new GitHubClient(env.GITHUB_APP_ID, env.GITHUB_PRIVATE_KEY);
+  const github = new GitHubClient(env.GITHUB_APP_ID || '', env.GITHUB_PRIVATE_KEY || '');
   const parcle = new ParcleClient(env.PARCLE_API_KEY || null, env.DB);
   const groq = new GroqEngine(env.GROQ_API_KEY || 'dummy_key');
   const repoFullName = `${owner}/${repo}`;
 
   try {
     console.log(`Starting repository sync for ${repoFullName}...`);
-    // 1. Get installation ID for repo
-    const installationId = await github.getRepositoryInstallation(owner, repo);
-    const token = await github.getInstallationToken(installationId);
+    
+    let token = '';
+    let repoDetails: any = null;
+    let repoId = 0;
+    let defaultBranch = 'main';
 
-    // 2. Fetch repo details (like default branch)
-    const repoDetails = await github.getRepositoryDetails(token, owner, repo);
-    const defaultBranch = repoDetails.default_branch || 'main';
-    const repoId = repoDetails.id;
+    if (userAccessToken) {
+      token = userAccessToken;
+      console.log(`Using user OAuth access token for sync of ${repoFullName}`);
+      repoDetails = await github.getRepositoryDetails(token, owner, repo);
+      defaultBranch = repoDetails.default_branch || 'main';
+      repoId = repoDetails.id;
+    } else {
+      if (!env.GITHUB_APP_ID || !env.GITHUB_PRIVATE_KEY) {
+        console.error('GITHUB_APP_ID or GITHUB_PRIVATE_KEY is not defined. Cannot sync.');
+        return;
+      }
+      // Get installation ID for repo using GitHub App
+      const installationId = await github.getRepositoryInstallation(owner, repo);
+      token = await github.getInstallationToken(installationId);
+      repoDetails = await github.getRepositoryDetails(token, owner, repo);
+      defaultBranch = repoDetails.default_branch || 'main';
+      repoId = repoDetails.id;
+    }
 
     // Register / update repository in D1
     await db.upsertRepo(repoId, owner, repo);

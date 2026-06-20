@@ -1412,3 +1412,586 @@ h1, h2, h3, h4, h5, h6 {
     grid-template-columns: 1fr;
   }
 }
+
+/* --- FLAT DEVELOPER HUD MINIMALIST OVERRIDES (NO GRADIENTS, MONOSPACE FONTS, Stark Three-Pane Layout) --- */
+
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
+
+:root {
+  /* Stark flat technical theme variables */
+  --bg-darkest: #0A0A0C;      /* Flat deep black */
+  --bg-darker: #0F1015;       /* Solid dark gray */
+  --bg-hud: #14151C;          /* Panel background */
+  --bg-card: #14151C;         /* Flat card background */
+  --bg-terminal: #070709;     /* Console black */
+  
+  --border-hud: #24252D;      /* Solid slate border */
+  --border-hover: #404250;    /* Solid lighter border on hover */
+  --border-focus: #505260;
+  
+  --primary: #00FF66;         /* Flat terminal green */
+  --primary-hover: #33FF88;
+  --primary-glow: transparent;
+  --primary-bg: #14251C;      /* Very dark flat green */
+  
+  --accent-pro: #FFCC00;      /* Flat solid gold */
+  --accent-pro-glow: transparent;
+  --accent-pro-bg: #2C2612;   /* Very dark flat gold */
+  
+  --success: #00FF66;         /* Flat solid green */
+  --success-glow: transparent;
+  --success-bg: #0C2014;
+  
+  --warning: #FF8F00;         /* Flat solid orange */
+  --warning-glow: transparent;
+  --warning-bg: #281D10;
+  
+  --error: #FF3366;           /* Flat solid crimson */
+  --error-glow: transparent;
+  --error-bg: #2A1016;
+  
+  --info: #00B0FF;            /* Flat solid blue */
+  --info-bg: #0A1E2C;
+  
+  --text-bright: #FFFFFF;     /* Pure white */
+  --text-normal: #A0A2AD;     /* Gray */
+  --text-muted: #626470;      /* Dark gray */
+  --text-dark: #323440;
+  
+  --radius-lg: 0px;           /* Sharp, flat edges */
+  --radius-md: 0px;
+  --radius-sm: 0px;
+}
+
+body {
+  background: var(--bg-darkest) !important;
+  background-image: none !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  color: var(--text-normal) !important;
+}
+
+h1, h2, h3, h4, h5, h6, select, button, input {
+  font-family: 'JetBrains Mono', monospace !important;
+  text-shadow: none !important;
+  background-image: none !important;
+}
+
+/* Restructure into clean 3-pane IDE layout */
+.app-container {
+  display: grid !important;
+  grid-template-columns: 240px 1fr !important;
+  height: 100vh !important;
+  overflow: hidden !important;
+  background: var(--bg-darkest) !important;
+}
+
+.sidebar {
+  border-right: 1px solid var(--border-hud) !important;
+  padding: 16px !important;
+  background: var(--bg-darker) !important;
+}
+
+.brand {
+  border-bottom: 1px solid var(--border-hud) !important;
+  margin-bottom: 16px !important;
+  padding-bottom: 12px !important;
+}
+
+.brand-text h1 {
+  background: none !important;
+  -webkit-background-clip: unset !important;
+  -webkit-text-fill-color: unset !important;
+  color: var(--text-bright) !important;
+  font-weight: 700 !important;
+  font-size: 16px !important;
+}
+
+.logo-icon {
+  animation: none !important;
+  filter: none !important;
+}
+
+.repo-item {
+  border: 1px solid var(--border-hud) !important;
+  border-radius: var(--radius-md) !important;
+  margin-bottom: 4px !important;
+  padding: 8px 12px !important;
+  background: var(--bg-darker) !important;
+}
+
+.repo-item:hover, .repo-item.active {
+  background: var(--bg-hud) !important;
+  border-color: var(--primary) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.dashboard-main {
+  display: flex !important;
+  flex-direction: column !important;
+  height: 100vh !important;
+  padding: 0 !important;
+  overflow: hidden !important;
+  background: var(--bg-darkest) !important;
+}
+
+.hud-header {
+  min-height: 56px !important;
+  height: auto !important;
+  padding: 10px 20px !important;
+  margin-bottom: 0 !important;
+  border-bottom: 1px solid var(--border-hud) !important;
+  background: var(--bg-darker) !important;
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  gap: 16px !important;
+  flex-shrink: 0 !important;
+}
+
+.hud-title-area {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.hud-tag {
+  margin: 0 !important;
+}
+
+.hud-title-area h2 {
+  font-size: 16px !important;
+  font-weight: 600 !important;
+  margin: 0 !important;
+}
+
+#pro-badge {
+  margin: 0 !important;
+}
+
+.hud-actions {
+  display: flex !important;
+  flex-wrap: wrap !important;
+  align-items: center !important;
+  gap: 12px !important;
+}
+
+.control-group {
+  display: flex !important;
+  flex-direction: row !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.control-group label {
+  margin: 0 !important;
+  white-space: nowrap !important;
+}
+
+.btn {
+  border-radius: 0px !important;
+  border: 1px solid var(--border-hud) !important;
+  background: var(--bg-darker) !important;
+  color: var(--text-bright) !important;
+  box-shadow: none !important;
+  font-size: 12px !important;
+  padding: 6px 12px !important;
+  text-transform: uppercase !important;
+}
+
+.btn:hover {
+  background: var(--bg-hud) !important;
+  border-color: var(--border-hover) !important;
+  transform: none !important;
+  box-shadow: none !important;
+}
+
+.btn-action {
+  border-color: var(--primary) !important;
+}
+
+.btn-action:hover {
+  background: var(--primary-bg) !important;
+  border-color: var(--primary-hover) !important;
+}
+
+.btn-pro {
+  border-color: var(--accent-pro) !important;
+  background: var(--accent-pro-bg) !important;
+  color: var(--accent-pro) !important;
+}
+
+.btn-pro:hover {
+  background: var(--accent-pro) !important;
+  color: var(--bg-darkest) !important;
+}
+
+.pr-select {
+  border-radius: 0px !important;
+  border: 1px solid var(--border-hud) !important;
+  background: var(--bg-darkest) !important;
+  color: var(--text-bright) !important;
+  padding: 6px 10px !important;
+  font-size: 12px !important;
+}
+
+/* Two-pane content grid layout */
+.dashboard-panes-wrapper {
+  display: grid !important;
+  grid-template-columns: 420px 1fr !important;
+  flex-grow: 1 !important;
+  height: auto !important;
+  overflow: hidden !important;
+}
+
+.dashboard-pane {
+  overflow-y: auto !important;
+  padding: 20px !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 20px !important;
+}
+
+.pane-left {
+  border-right: 1px solid var(--border-hud) !important;
+  background: var(--bg-darker) !important;
+}
+
+.pane-right {
+  background: var(--bg-darkest) !important;
+}
+
+.hud-card {
+  background: var(--bg-hud) !important;
+  border: 1px solid var(--border-hud) !important;
+  border-radius: 0px !important;
+  padding: 16px !important;
+  box-shadow: none !important;
+  background-image: none !important;
+}
+
+.score-hud-card {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  padding: 16px 20px !important;
+}
+
+.score-hud-card h3 {
+  font-size: 13px !important;
+  text-transform: uppercase !important;
+  color: var(--text-muted) !important;
+  margin: 0 !important;
+}
+
+.score-display-flat {
+  font-size: 28px !important;
+  font-weight: 700 !important;
+  color: var(--primary) !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  display: flex !important;
+  align-items: baseline !important;
+}
+
+.score-denom {
+  font-size: 14px !important;
+  color: var(--text-muted) !important;
+  margin-left: 2px !important;
+}
+
+.score-status-badge {
+  border-radius: 0px !important;
+  box-shadow: none !important;
+  font-size: 10px !important;
+  padding: 4px 8px !important;
+  letter-spacing: 0.05em !important;
+}
+
+.summary-hud-card {
+  background: var(--bg-hud) !important;
+}
+
+.summary-hud-card h3 {
+  font-size: 12px !important;
+  text-transform: uppercase !important;
+  color: var(--text-muted) !important;
+  margin-bottom: 8px !important;
+  border-bottom: 1px solid var(--border-hud) !important;
+  padding-bottom: 6px !important;
+}
+
+.summary-details h4 {
+  font-size: 14px !important;
+  color: var(--text-bright) !important;
+  margin-bottom: 8px !important;
+}
+
+.summary-content-text {
+  font-size: 12px !important;
+  color: var(--text-normal) !important;
+  line-height: 1.6 !important;
+}
+
+.hud-section h3 {
+  font-size: 12px !important;
+  text-transform: uppercase !important;
+  color: var(--text-muted) !important;
+  margin-bottom: 12px !important;
+  border-bottom: 1px solid var(--border-hud) !important;
+  padding-bottom: 6px !important;
+}
+
+/* Dimensions Postures list */
+.dimensions-grid {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 10px !important;
+}
+
+.dimension-card {
+  background: var(--bg-darkest) !important;
+  border: 1px solid var(--border-hud) !important;
+  padding: 10px 12px !important;
+  border-radius: 0px !important;
+  box-shadow: none !important;
+}
+
+.dim-header {
+  display: flex !important;
+  justify-content: space-between !important;
+  align-items: center !important;
+  font-size: 12px !important;
+  font-weight: 500 !important;
+}
+
+.dim-name {
+  color: var(--text-bright) !important;
+  text-transform: uppercase !important;
+}
+
+.dim-bar-wrapper {
+  background: var(--bg-hud) !important;
+  height: 4px !important;
+  border-radius: 0px !important;
+  margin: 6px 0 !important;
+  border: none !important;
+}
+
+.dim-bar {
+  height: 100% !important;
+  border-radius: 0px !important;
+  transition: width var(--t-smooth) !important;
+}
+
+.dim-notes {
+  margin-top: 4px !important;
+  font-size: 10px !important;
+}
+
+.note-hit {
+  color: var(--warning) !important;
+}
+
+.note-none {
+  color: var(--text-muted) !important;
+}
+
+/* Right Pane: LLM Thought process terminal styled console */
+.thought-hud-card {
+  padding: 0 !important;
+  display: flex !important;
+  flex-direction: column !important;
+}
+
+.thought-hud-card h3 {
+  font-size: 12px !important;
+  text-transform: uppercase !important;
+  color: var(--text-muted) !important;
+  padding: 12px 16px !important;
+  margin: 0 !important;
+  border-bottom: 1px solid var(--border-hud) !important;
+  background: var(--bg-darker) !important;
+}
+
+.thought-process-console {
+  background: var(--bg-terminal) !important;
+  padding: 16px !important;
+  max-height: 320px !important;
+  min-height: 120px !important;
+  overflow-y: auto !important;
+  border-radius: 0px !important;
+  border: none !important;
+}
+
+.thought-process-content {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 12px !important;
+  line-height: 1.6 !important;
+  color: #00FF66 !important; /* Stark terminal green */
+  white-space: pre-wrap !important;
+}
+
+/* Risks / Warnings list */
+.risks-list {
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 8px !important;
+}
+
+.risk-item {
+  background: var(--bg-hud) !important;
+  border: 1px solid var(--border-hud) !important;
+  border-radius: 0px !important;
+  padding: 12px !important;
+  box-shadow: none !important;
+  display: flex !important;
+  flex-direction: column !important;
+  gap: 6px !important;
+}
+
+.risk-item:hover {
+  border-color: var(--border-hover) !important;
+  transform: none !important;
+}
+
+.risk-header {
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  font-size: 12px !important;
+  font-weight: 600 !important;
+}
+
+.risk-title-container {
+  display: flex !important;
+  align-items: center !important;
+  gap: 8px !important;
+}
+
+.risk-badge {
+  font-size: 9px !important;
+  padding: 2px 6px !important;
+  border-radius: 0px !important;
+  text-transform: uppercase !important;
+}
+
+.risk-badge.critical {
+  background: var(--error-bg) !important;
+  color: var(--error) !important;
+  border: 1px solid var(--error) !important;
+}
+
+.risk-badge.warning {
+  background: var(--warning-bg) !important;
+  color: var(--warning) !important;
+  border: 1px solid var(--warning) !important;
+}
+
+.risk-badge.info {
+  background: var(--info-bg) !important;
+  color: var(--info) !important;
+  border: 1px solid var(--info) !important;
+}
+
+.risk-loc {
+  font-size: 10px !important;
+  color: var(--text-muted) !important;
+  font-family: 'JetBrains Mono', monospace !important;
+}
+
+.risk-desc {
+  font-size: 11px !important;
+  color: var(--text-normal) !important;
+  line-height: 1.5 !important;
+}
+
+/* Incidents list and memories */
+.memories-panel {
+  border: 1px solid var(--border-hud) !important;
+  border-radius: 0px !important;
+  background: var(--bg-hud) !important;
+  padding: 12px !important;
+  box-shadow: none !important;
+}
+
+.memory-item {
+  border: 1px solid var(--border-hud) !important;
+  background: var(--bg-darkest) !important;
+  padding: 10px !important;
+  margin-bottom: 8px !important;
+  border-radius: 0px !important;
+}
+
+.memory-header {
+  font-size: 10px !important;
+  color: var(--text-muted) !important;
+  border-bottom: 1px dashed var(--border-hud) !important;
+  padding-bottom: 4px !important;
+  margin-bottom: 6px !important;
+}
+
+.memory-text {
+  font-size: 11px !important;
+  color: var(--text-normal) !important;
+  line-height: 1.5 !important;
+}
+
+/* Live Terminal scan HUD overrides */
+.terminal-container {
+  background: var(--bg-terminal) !important;
+  border: 1px solid var(--border-hud) !important;
+  border-radius: 0px !important;
+  box-shadow: none !important;
+}
+
+.terminal-header {
+  background: var(--bg-darker) !important;
+  border-bottom: 1px solid var(--border-hud) !important;
+  padding: 10px 16px !important;
+  border-radius: 0px !important;
+}
+
+.term-progress-track {
+  background: var(--bg-hud) !important;
+  border-radius: 0px !important;
+  height: 6px !important;
+  border: 1px solid var(--border-hud) !important;
+}
+
+.term-progress-bar {
+  background: var(--primary) !important;
+  border-radius: 0px !important;
+  box-shadow: none !important;
+}
+
+.log-line {
+  font-family: 'JetBrains Mono', monospace !important;
+  font-size: 11px !important;
+  line-height: 1.5 !important;
+  padding: 4px 0 !important;
+}
+
+/* Overlay log-in page overrides */
+.login-overlay, .modal-overlay {
+  background: rgba(0, 0, 0, 0.85) !important;
+  backdrop-filter: none !important;
+}
+
+.login-box, .modal-box {
+  background: var(--bg-hud) !important;
+  border: 1px solid var(--border-hud) !important;
+  border-radius: 0px !important;
+  box-shadow: none !important;
+  padding: 32px !important;
+  max-width: 420px !important;
+}
+
+/* Remove all glow animations and shadow effects globally */
+* {
+  text-shadow: none !important;
+  box-shadow: none !important;
+  filter: none !important;
+}
+

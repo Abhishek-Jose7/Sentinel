@@ -709,11 +709,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // 3. Render Dimensions Postures
     const dims = [
-      { key: 'security', name: 'security', color: 'linear-gradient(90deg, #f43f5e, #ec4899)' },
-      { key: 'reliability', name: 'reliability', color: 'linear-gradient(90deg, #f59e0b, #eab308)' },
-      { key: 'observability', name: 'observability', color: 'linear-gradient(90deg, #3b82f6, #06b6d4)' },
-      { key: 'performance', name: 'performance', color: 'linear-gradient(90deg, #8b5cf6, #a855f7)' },
-      { key: 'deployment', name: 'deployment', color: 'linear-gradient(90deg, #10b981, #14b8a6)' }
+      { key: 'security', name: 'security', color: '#EF4444' },
+      { key: 'reliability', name: 'reliability', color: '#F59E0B' },
+      { key: 'observability', name: 'observability', color: '#3B82F6' },
+      { key: 'performance', name: 'performance', color: '#8B5CF6' },
+      { key: 'deployment', name: 'deployment', color: '#10B981' }
     ];
 
     el.dimensionsContainer.innerHTML = '';

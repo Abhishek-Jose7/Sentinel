@@ -26,6 +26,7 @@ CREATE TABLE IF NOT EXISTS pull_requests (
   observability_score INTEGER DEFAULT NULL,
   performance_score INTEGER DEFAULT NULL,
   deployment_score INTEGER DEFAULT NULL,
+  thought_process TEXT DEFAULT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(repo_id) REFERENCES repositories(id) ON DELETE CASCADE

@@ -49,7 +49,8 @@ document.addEventListener('DOMContentLoaded', () => {
     userName: document.getElementById('user-name'),
     userRole: document.getElementById('user-role'),
     repoMemoriesList: document.getElementById('repo-memories-list'),
-    repoMemoryCountBadge: document.getElementById('repo-memory-count-badge')
+    repoMemoryCountBadge: document.getElementById('repo-memory-count-badge'),
+    thoughtProcessText: document.getElementById('thought-process-text')
   };
 
   // 1. Initial Load
@@ -657,6 +658,9 @@ document.addEventListener('DOMContentLoaded', () => {
     
     if (score === null) {
       el.analysisSummary.innerHTML = `No audit reports found. Click the <strong>Scan Codebase</strong> trigger above to generate scores and failure predictions.`;
+      if (el.thoughtProcessText) {
+        el.thoughtProcessText.textContent = "Initialize scan or select history log reference to display the engine's step-by-step security reasoning.";
+      }
     } else {
       // Construct summary from risks / severity
       const criticalCount = risks.filter(r => r.severity === 'critical').length;
@@ -696,6 +700,11 @@ document.addEventListener('DOMContentLoaded', () => {
       scoreExplanation += `</div>`;
 
       el.analysisSummary.innerHTML = summaryText + scoreExplanation;
+      
+      // Update thought process text
+      if (el.thoughtProcessText) {
+        el.thoughtProcessText.textContent = pr.thought_process || "No detailed reasoning logs recorded for this scan. Deterministic verification was executed directly.";
+      }
     }
 
     // 3. Render Dimensions Postures
@@ -865,5 +874,8 @@ document.addEventListener('DOMContentLoaded', () => {
     el.dimensionsContainer.innerHTML = '<div style="grid-column: 1/6; text-align: center; color: var(--text-muted); padding: 24px;">No scan dimension data available. Trigger a codebase scan above.</div>';
     el.risksList.innerHTML = '<div class="empty-state"><p>Risk queue empty. Trigger scan to populate.</p></div>';
     el.memoriesPanel.innerHTML = '<div class="empty-state"><p>Memory index empty.</p></div>';
+    if (el.thoughtProcessText) {
+      el.thoughtProcessText.textContent = "Run a codebase scan above to invoke the Groq reasoning engine and see step-by-step audit thoughts.";
+    }
   }
 });

@@ -18,6 +18,7 @@ export interface AnalysisResult {
   };
   risks: Risk[];
   summary: string;
+  thought_process: string;
 }
 
 export interface BaselineAnalysisInput {
@@ -120,7 +121,8 @@ You must output a single, strictly valid JSON object matching the following Type
       "severity": "critical" | "warning" | "info"
     }
   ],
-  "summary": "1-2 sentence high-level summary of the analysis findings"
+  "summary": "1-2 sentence high-level summary of the analysis findings",
+  "thought_process": "detailed string explaining the LLM's thought process, reasoning steps, code quality evaluation, security considerations, and intermediate deductions during analysis of this PR and diff"
 }
 
 Ground all risks strictly in the diff or facts provided. Only penalize dimensions if the diff introduces issues, or if the repository facts indicate a lack of features.
@@ -186,7 +188,8 @@ Analyze the changes and output your JSON:`;
             severity: 'warning'
           }
         ],
-        summary: 'Groq analysis was bypassed due to API error. Local deterministic checks still apply.'
+        summary: 'Groq analysis was bypassed due to API error. Local deterministic checks still apply.',
+        thought_process: `Groq LLM reasoning execution encountered an error: ${err instanceof Error ? err.message : String(err)}. Falling back to deterministic rules calculation.`
       };
     }
   }
@@ -237,7 +240,8 @@ Return JSON matching this schema:
       "severity": "critical" | "warning" | "info"
     }
   ],
-  "summary": "1-2 sentence baseline readiness summary"
+  "summary": "1-2 sentence baseline readiness summary",
+  "thought_process": "detailed string explaining the LLM's thought process, reasoning steps, configuration review, risk calculations, and intermediate deductions during baseline assessment of the codebase"
 }
 
 Keep dimensions close to the deterministic scores. Only adjust by at most 5 points per dimension if the facts justify it.`;
@@ -283,7 +287,8 @@ Keep dimensions close to the deterministic scores. Only adjust by at most 5 poin
           why: hit.description,
           severity: hit.penalty >= 15 ? 'warning' : 'info'
         })),
-        summary: 'Baseline analysis used deterministic repository facts because Groq reasoning was unavailable.'
+        summary: 'Baseline analysis used deterministic repository facts because Groq reasoning was unavailable.',
+        thought_process: `Baseline Groq analysis query failed: ${err instanceof Error ? err.message : String(err)}. Substituted default deterministic fact models.`
       };
     }
   }
@@ -334,7 +339,8 @@ Keep dimensions close to the deterministic scores. Only adjust by at most 5 poin
           why: String(r.why || ''),
           severity: ['critical', 'warning', 'info'].includes(r.severity) ? r.severity : 'warning'
         })) : [],
-        summary: String(parsed.summary || 'PR analysis completed.')
+        summary: String(parsed.summary || 'PR analysis completed.'),
+        thought_process: String(parsed.thought_process || 'LLM reasoning successfully completed. Codebase structures and historical patterns mapped against deterministic rule sets.')
       };
     } catch (err) {
       console.error('Failed to parse Groq response JSON:', err, '\nRaw Text:', text);

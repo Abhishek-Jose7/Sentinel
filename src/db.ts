@@ -24,6 +24,7 @@ export interface DbPR {
   observability_score: number;
   performance_score: number;
   deployment_score: number;
+  thought_process: string | null;
   created_at: string;
   updated_at: string;
 }
@@ -139,9 +140,9 @@ export class DbHelper {
       `INSERT INTO pull_requests (
         id, repo_id, pr_number, title, state, overall_score,
         security_score, reliability_score, observability_score, performance_score, deployment_score,
-        created_at, updated_at
+        thought_process, created_at, updated_at
        ) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET 
          title=excluded.title, 
          state=excluded.state, 
@@ -151,11 +152,12 @@ export class DbHelper {
          observability_score=excluded.observability_score, 
          performance_score=excluded.performance_score, 
          deployment_score=excluded.deployment_score,
+         thought_process=excluded.thought_process,
          updated_at=?`
     ).bind(
       pr.id, pr.repo_id, pr.pr_number, pr.title, pr.state, pr.overall_score,
       pr.security_score, pr.reliability_score, pr.observability_score, pr.performance_score, pr.deployment_score,
-      now, now, now
+      pr.thought_process, now, now, now
     ).run();
   }
 

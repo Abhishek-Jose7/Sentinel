@@ -166,26 +166,73 @@ export default {
           });
         }
 
-        const repos = await db.listRepos();
+        const allowedRepoIds = new Set<number>();
 
-        // Query GitHub API for user's repos to verify permissions
-        const ghReposRes = await fetch('https://api.github.com/user/repos?per_page=100', {
-          headers: {
-            'Authorization': `token ${session.accessToken}`,
-            'Accept': 'application/vnd.github.v3+json',
-            'User-Agent': 'Sentinel-App'
-          }
-        });
-
-        if (!ghReposRes.ok) {
-          return new Response(JSON.stringify({ error: 'Failed to fetch repository access permissions from GitHub' }), {
-            status: 500,
-            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+        // 1. Auto-discover installations and their repositories
+        try {
+          const installationsRes = await fetch('https://api.github.com/user/installations', {
+            headers: {
+              'Authorization': `token ${session.accessToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Sentinel-App'
+            }
           });
+
+          if (installationsRes.ok) {
+            const instData = await installationsRes.json() as any;
+            const installations = instData.installations || [];
+            
+            await Promise.all(installations.map(async (inst: any) => {
+              try {
+                const reposRes = await fetch(`https://api.github.com/user/installations/${inst.id}/repositories?per_page=100`, {
+                  headers: {
+                    'Authorization': `token ${session.accessToken}`,
+                    'Accept': 'application/vnd.github.v3+json',
+                    'User-Agent': 'Sentinel-App'
+                  }
+                });
+                if (reposRes.ok) {
+                  const reposData = await reposRes.json() as any;
+                  const instRepos = reposData.repositories || [];
+                  for (const r of instRepos) {
+                    allowedRepoIds.add(r.id);
+                    const existing = await db.getRepo(r.owner.login, r.name);
+                    await db.upsertRepo(r.id, r.owner.login, r.name);
+                    if (!existing) {
+                      ctx.waitUntil(runRepositorySync(r.owner.login, r.name, env));
+                    }
+                  }
+                }
+              } catch (e) {
+                console.error(`Error auto-fetching repos for installation ${inst.id}:`, e);
+              }
+            }));
+          }
+        } catch (err) {
+          console.error('Error auto-discovering installations:', err);
         }
 
-        const ghRepos = await ghReposRes.json() as any[];
-        const allowedRepoIds = new Set(ghRepos.map(r => r.id));
+        // 2. Fallback / additional user repos to ensure direct permissions
+        try {
+          const ghReposRes = await fetch('https://api.github.com/user/repos?per_page=100', {
+            headers: {
+              'Authorization': `token ${session.accessToken}`,
+              'Accept': 'application/vnd.github.v3+json',
+              'User-Agent': 'Sentinel-App'
+            }
+          });
+
+          if (ghReposRes.ok) {
+            const ghRepos = await ghReposRes.json() as any[];
+            for (const r of ghRepos) {
+              allowedRepoIds.add(r.id);
+            }
+          }
+        } catch (err) {
+          console.error('Error auto-fetching direct user repos:', err);
+        }
+
+        const repos = await db.listRepos();
         const filteredRepos = repos.filter(r => allowedRepoIds.has(r.id));
 
         return new Response(JSON.stringify(filteredRepos), {
@@ -583,7 +630,8 @@ async function runAuditLoop(payload: any, env: Env) {
       reliability_score: dimensions.reliability,
       observability_score: dimensions.observability,
       performance_score: dimensions.performance,
-      deployment_score: dimensions.deployment
+      deployment_score: dimensions.deployment,
+      thought_process: analysis.thought_process || null
     });
 
     await db.clearPRRuleHits(prId);
@@ -807,7 +855,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
           why: hit.description,
           severity: (hit.penalty >= 15 ? 'warning' : 'info') as 'warning' | 'info'
         })),
-        summary: 'Baseline posture scan computed deterministic rules checks.'
+        summary: 'Baseline posture scan computed deterministic rules checks.',
+        thought_process: `Groq baseline analysis execution failed: ${e instanceof Error ? e.message : String(e)}. Executed deterministic checklist analysis.`
       };
     }
 
@@ -825,7 +874,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
       reliability_score: baselineClamped.dimensions.reliability,
       observability_score: baselineClamped.dimensions.observability,
       performance_score: baselineClamped.dimensions.performance,
-      deployment_score: baselineClamped.dimensions.deployment
+      deployment_score: baselineClamped.dimensions.deployment,
+      thought_process: baselineAnalysis.thought_process || null
     });
 
     // Insert baseline rule hits
@@ -945,7 +995,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
             reliability_score: commitClamped.dimensions.reliability,
             observability_score: commitClamped.dimensions.observability,
             performance_score: commitClamped.dimensions.performance,
-            deployment_score: commitClamped.dimensions.deployment
+            deployment_score: commitClamped.dimensions.deployment,
+            thought_process: 'Historical commit scan successfully verified against local deterministic rules. Groq LLM reasoning was bypassed to conserve API limits.'
           });
 
           // Insert rule hits
@@ -1056,7 +1107,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
           reliability_score: clamped.dimensions.reliability,
           observability_score: clamped.dimensions.observability,
           performance_score: clamped.dimensions.performance,
-          deployment_score: clamped.dimensions.deployment
+          deployment_score: clamped.dimensions.deployment,
+          thought_process: 'Historical PR scan successfully verified against local deterministic rules. Groq LLM reasoning was bypassed to conserve API limits.'
         });
 
         // Insert rule hits

@@ -1,3 +1,5 @@
+@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
+
 /* src/frontend/styles.css */
 
 :root {
@@ -1415,8 +1417,6 @@ h1, h2, h3, h4, h5, h6 {
 
 /* --- FLAT DEVELOPER HUD MINIMALIST OVERRIDES (NO GRADIENTS, MONOSPACE FONTS, Stark Three-Pane Layout) --- */
 
-@import url('https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@300;400;500;600;700;800&display=swap');
-
 :root {
   /* Stark flat technical theme variables */
   --bg-darkest: #0A0A0C;      /* Flat deep black */
@@ -1536,9 +1536,9 @@ h1, h2, h3, h4, h5, h6, select, button, input {
 }
 
 .hud-header {
-  min-height: 56px !important;
+  min-height: 64px !important;
   height: auto !important;
-  padding: 10px 20px !important;
+  padding: 12px 24px !important;
   margin-bottom: 0 !important;
   border-bottom: 1px solid var(--border-hud) !important;
   background: var(--bg-darker) !important;
@@ -1555,20 +1555,33 @@ h1, h2, h3, h4, h5, h6, select, button, input {
   flex-direction: row !important;
   align-items: center !important;
   gap: 12px !important;
+  min-width: 0 !important;
+  flex-shrink: 1 !important;
 }
 
 .hud-tag {
   margin: 0 !important;
+  flex-shrink: 0 !important;
+  align-self: center !important;
 }
 
 .hud-title-area h2 {
   font-size: 16px !important;
   font-weight: 600 !important;
   margin: 0 !important;
+  white-space: nowrap !important;
+  overflow: hidden !important;
+  text-overflow: ellipsis !important;
+  min-width: 0 !important;
+  flex-shrink: 1 !important;
+  align-self: center !important;
 }
 
 #pro-badge {
   margin: 0 !important;
+  flex-shrink: 0 !important;
+  align-self: center !important;
+  border-radius: 0px !important;
 }
 
 .hud-actions {
@@ -1986,6 +1999,64 @@ h1, h2, h3, h4, h5, h6, select, button, input {
   box-shadow: none !important;
   padding: 32px !important;
   max-width: 420px !important;
+}
+
+/* Stark Technical HUD Enhancements */
+::-webkit-scrollbar {
+  width: 5px !important;
+  height: 5px !important;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-darkest) !important;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hud) !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary) !important;
+}
+
+body {
+  background: var(--bg-darkest) !important;
+  background-image: radial-gradient(circle, #191a22 1px, transparent 1px) !important;
+  background-size: 16px 16px !important;
+  font-family: 'JetBrains Mono', monospace !important;
+  color: var(--text-normal) !important;
+}
+
+.repo-item.active {
+  background: var(--bg-hud) !important;
+  border-color: var(--primary) !important;
+  border-left: 3px solid var(--primary) !important;
+}
+
+.repo-item:hover:not(.active) {
+  background: rgba(0, 255, 102, 0.02) !important;
+  border-color: var(--border-hover) !important;
+}
+
+.score-hud-card {
+  border-left: 4px solid var(--primary) !important;
+}
+
+.score-explanation-report {
+  background: var(--bg-darkest) !important;
+  border: 1px dashed var(--border-hud) !important;
+  padding: 12px !important;
+  margin-top: 12px !important;
+}
+
+.risk-item {
+  border-left: 3px solid var(--border-hud) !important;
+}
+
+.risk-item:hover {
+  border-left-color: var(--primary) !important;
+  background: rgba(0, 255, 102, 0.01) !important;
+}
+
+.thought-process-console {
+  border: 1px solid var(--border-hud) !important;
 }
 
 /* Remove all glow animations and shadow effects globally */

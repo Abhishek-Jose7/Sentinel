@@ -153,11 +153,11 @@ export class DbHelper {
          performance_score=excluded.performance_score, 
          deployment_score=excluded.deployment_score,
          thought_process=excluded.thought_process,
-         updated_at=?`
+         updated_at=excluded.updated_at`
     ).bind(
       pr.id, pr.repo_id, pr.pr_number, pr.title, pr.state, pr.overall_score,
       pr.security_score, pr.reliability_score, pr.observability_score, pr.performance_score, pr.deployment_score,
-      pr.thought_process, now, now, now
+      pr.thought_process, now, now
     ).run();
   }
 

@@ -209,6 +209,42 @@ export default {
           });
         }
 
+        // Helper to fetch all paginated items from a GitHub API endpoint
+        async function fetchAllGitHubPages(url: string, token: string): Promise<any[]> {
+          let results: any[] = [];
+          let nextUrl: string | null = url;
+
+          while (nextUrl) {
+            const res: Response = await fetch(nextUrl, {
+              headers: {
+                'Authorization': `token ${token}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Sentinel-App'
+              }
+            });
+
+            if (!res.ok) {
+              console.error(`Failed to fetch page ${nextUrl}: ${res.status}`);
+              break;
+            }
+
+            const data = await res.json() as any;
+            if (Array.isArray(data)) {
+              results = results.concat(data);
+            } else if (data && Array.isArray(data.repositories)) {
+              results = results.concat(data.repositories);
+            } else {
+              break;
+            }
+
+            const linkHeader: string = res.headers.get('Link') || '';
+            const nextMatch: RegExpMatchArray | null = linkHeader.match(/<([^>]+)>;\s*rel="next"/);
+            nextUrl = nextMatch ? nextMatch[1] : null;
+          }
+
+          return results;
+        }
+
         const allowedRepoIds = new Set<number>();
 
         // 1. Auto-discover installations and their repositories
@@ -227,26 +263,16 @@ export default {
             
             await Promise.all(installations.map(async (inst: any) => {
               try {
-                const reposRes = await fetch(`https://api.github.com/user/installations/${inst.id}/repositories?per_page=100`, {
-                  headers: {
-                    'Authorization': `token ${session.accessToken}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Sentinel-App'
-                  }
-                });
-                if (reposRes.ok) {
-                  const reposData = await reposRes.json() as any;
-                  const instRepos = reposData.repositories || [];
-                  let newReposCount = 0;
-                  for (const r of instRepos) {
-                    allowedRepoIds.add(r.id);
-                    const existing = await db.getRepo(r.owner.login, r.name);
-                    await db.upsertRepo(r.id, r.owner.login, r.name);
-                    if (!existing) {
-                      newReposCount++;
-                      if (newReposCount === 1) {
-                        ctx.waitUntil(runRepositorySync(r.owner.login, r.name, env, session.accessToken));
-                      }
+                const instRepos = await fetchAllGitHubPages(`https://api.github.com/user/installations/${inst.id}/repositories?per_page=100`, session.accessToken);
+                let newReposCount = 0;
+                for (const r of instRepos) {
+                  allowedRepoIds.add(r.id);
+                  const existing = await db.getRepo(r.owner.login, r.name);
+                  await db.upsertRepo(r.id, r.owner.login, r.name);
+                  if (!existing) {
+                    newReposCount++;
+                    if (newReposCount === 1) {
+                      ctx.waitUntil(runRepositorySync(r.owner.login, r.name, env, session.accessToken));
                     }
                   }
                 }
@@ -261,23 +287,10 @@ export default {
 
         // 2. Fallback / additional user repos to ensure direct permissions
         try {
-          const ghReposRes = await fetch('https://api.github.com/user/repos?per_page=100', {
-            headers: {
-              'Authorization': `token ${session.accessToken}`,
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Sentinel-App'
-            }
-          });
-
-          if (ghReposRes.ok) {
-            const ghRepos = await ghReposRes.json() as any[];
-            for (const r of ghRepos) {
-              allowedRepoIds.add(r.id);
-              await db.upsertRepo(r.id, r.owner.login, r.name);
-            }
-          } else {
-            const errText = await ghReposRes.text();
-            console.error(`GitHub API user/repos failed with status ${ghReposRes.status}: ${errText}`);
+          const ghRepos = await fetchAllGitHubPages('https://api.github.com/user/repos?per_page=100', session.accessToken);
+          for (const r of ghRepos) {
+            allowedRepoIds.add(r.id);
+            await db.upsertRepo(r.id, r.owner.login, r.name);
           }
         } catch (err) {
           console.error('Error auto-fetching direct user repos:', err);
@@ -285,23 +298,10 @@ export default {
 
         // 3. Extra Fallback: Fetch public repositories for user directly (does not require broad OAuth permissions)
         try {
-          const publicReposRes = await fetch(`https://api.github.com/users/${session.login}/repos?per_page=100`, {
-            headers: {
-              'Authorization': `token ${session.accessToken}`,
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Sentinel-App'
-            }
-          });
-
-          if (publicReposRes.ok) {
-            const publicRepos = await publicReposRes.json() as any[];
-            for (const r of publicRepos) {
-              allowedRepoIds.add(r.id);
-              await db.upsertRepo(r.id, r.owner.login, r.name);
-            }
-          } else {
-            const errText = await publicReposRes.text();
-            console.log(`GitHub API public repos fallback returned status ${publicReposRes.status}: ${errText}`);
+          const publicRepos = await fetchAllGitHubPages(`https://api.github.com/users/${session.login}/repos?per_page=100`, session.accessToken);
+          for (const r of publicRepos) {
+            allowedRepoIds.add(r.id);
+            await db.upsertRepo(r.id, r.owner.login, r.name);
           }
         } catch (err) {
           console.error('Error auto-fetching public repos fallback:', err);
@@ -321,19 +321,10 @@ export default {
             const orgs = await orgsRes.json() as any[];
             await Promise.all(orgs.map(async (org: any) => {
               try {
-                const orgReposRes = await fetch(`https://api.github.com/orgs/${org.login}/repos?per_page=100`, {
-                  headers: {
-                    'Authorization': `token ${session.accessToken}`,
-                    'Accept': 'application/vnd.github.v3+json',
-                    'User-Agent': 'Sentinel-App'
-                  }
-                });
-                if (orgReposRes.ok) {
-                  const orgRepos = await orgReposRes.json() as any[];
-                  for (const r of orgRepos) {
-                    allowedRepoIds.add(r.id);
-                    await db.upsertRepo(r.id, r.owner.login, r.name);
-                  }
+                const orgRepos = await fetchAllGitHubPages(`https://api.github.com/orgs/${org.login}/repos?per_page=100`, session.accessToken);
+                for (const r of orgRepos) {
+                  allowedRepoIds.add(r.id);
+                  await db.upsertRepo(r.id, r.owner.login, r.name);
                 }
               } catch (e) {
                 console.error(`Error auto-fetching repos for org ${org.login}:`, e);
@@ -345,7 +336,32 @@ export default {
         }
 
         const repos = await db.listRepos();
-        const filteredRepos = repos.filter(r => allowedRepoIds.has(r.id));
+        const accessMap = new Map<number, boolean>();
+
+        await Promise.all(repos.map(async (r) => {
+          if (allowedRepoIds.has(r.id)) {
+            accessMap.set(r.id, true);
+            return;
+          }
+
+          // Direct check for private or organization repos registered in D1 that weren't auto-discovered
+          try {
+            const checkRes = await fetch(`https://api.github.com/repos/${r.owner}/${r.name}`, {
+              headers: {
+                'Authorization': `token ${session.accessToken}`,
+                'Accept': 'application/vnd.github.v3+json',
+                'User-Agent': 'Sentinel-App'
+              }
+            });
+            if (checkRes.ok) {
+              accessMap.set(r.id, true);
+            }
+          } catch (e) {
+            console.error(`Error checking direct access for repo ${r.owner}/${r.name}:`, e);
+          }
+        }));
+
+        const filteredRepos = repos.filter(r => accessMap.get(r.id) === true);
 
         return new Response(JSON.stringify(filteredRepos), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }
@@ -878,6 +894,7 @@ async function fetchDashboardJs(): Promise<string> {
 
 // Background sync worker for already going-on projects (baseline scan + past PR backfill)
 async function runRepositorySync(owner: string, repo: string, env: Env, userAccessToken?: string) {
+  const startTime = Date.now();
   const db = new DbHelper(env.DB);
   const github = new GitHubClient(env.GITHUB_APP_ID || '', env.GITHUB_PRIVATE_KEY || '');
   const parcle = new ParcleClient(env.PARCLE_API_KEY || null, env.DB);
@@ -936,7 +953,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     
     // Baseline score calculation
     const deterministicDimensions = scoreFromFacts(hits);
-    const fallbackDimensions = { security: 80, reliability: 80, observability: 80, performance: 80, deployment: 80 };
+    const fallbackDimensions = { security: 100, reliability: 100, observability: 100, performance: 100, deployment: 100 };
     const overallScore = calculateOverallScore(deterministicDimensions);
 
     // Update repository current score
@@ -1279,13 +1296,18 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     }
 
     await db.updateRepoScanStatus(repoId, 'completed', 'Scan completed successfully.');
-    console.log(`Repository sync for ${repoFullName} completed successfully.`);
+    const duration = Date.now() - startTime;
+    console.log(`Repository sync for ${repoFullName} completed successfully. Sync Metrics: Scanned Files: ${facts.scannedFileCount}, Rule Hits: ${hits.length}, Memories Recalled: ${baselineMemories.length}, Duration: ${duration}ms`);
   } catch (err) {
     console.error(`Repository sync failed for ${repoFullName}:`, err);
     try {
       const repoObj = await db.getRepo(owner, repo);
       if (repoObj) {
-        await db.updateRepoScanStatus(repoObj.id, 'failed', `Scan failed: ${err instanceof Error ? err.message : String(err)}`);
+        let userFriendlyMessage = err instanceof Error ? err.message : String(err);
+        if (userFriendlyMessage.includes('Failed to get repo installation')) {
+          userFriendlyMessage = 'Sentinel GitHub App is not installed on this repository. Please configure it under GitHub settings to allow access to private repositories.';
+        }
+        await db.updateRepoScanStatus(repoObj.id, 'failed', `Scan failed: ${userFriendlyMessage}`);
       }
     } catch (dbErr) {
       console.error('Failed to write failure status to DB:', dbErr);

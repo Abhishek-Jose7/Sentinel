@@ -44,7 +44,7 @@ class MockD1Database {
       const owner = args[1];
       const name = args[2];
       const idx = this.store.repositories.findIndex(r => r.id === id);
-      const row = { id, owner, name, installed_at: new Date().toISOString(), current_score: 100, is_pro: 0, license_key: null };
+      const row = { id, owner, name, installed_at: new Date().toISOString(), current_score: null, is_pro: 0, license_key: null };
       if (idx >= 0) {
         this.store.repositories[idx].owner = owner;
         this.store.repositories[idx].name = name;

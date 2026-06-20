@@ -673,17 +673,17 @@ document.addEventListener('DOMContentLoaded', () => {
       summaryText += `Verify the rule detections and annotations below.`;
       
       // Dynamic Score Calculation Report
-      const sec = pr.security_score !== undefined ? pr.security_score : 100;
-      const rel = pr.reliability_score !== undefined ? pr.reliability_score : 100;
-      const obs = pr.observability_score !== undefined ? pr.observability_score : 100;
-      const perf = pr.performance_score !== undefined ? pr.performance_score : 100;
-      const dep = pr.deployment_score !== undefined ? pr.deployment_score : 100;
+      const sec = pr.security_score !== undefined && pr.security_score !== null ? pr.security_score : '--';
+      const rel = pr.reliability_score !== undefined && pr.reliability_score !== null ? pr.reliability_score : '--';
+      const obs = pr.observability_score !== undefined && pr.observability_score !== null ? pr.observability_score : '--';
+      const perf = pr.performance_score !== undefined && pr.performance_score !== null ? pr.performance_score : '--';
+      const dep = pr.deployment_score !== undefined && pr.deployment_score !== null ? pr.deployment_score : '--';
 
       let scoreExplanation = `<div class="score-explanation-report" style="margin-top: 16px; font-size: 13px; color: var(--text-muted); line-height: 1.6; border-top: 1px dashed var(--border-hud); padding-top: 16px;">`;
       scoreExplanation += `<strong>🛡️ Score Calculation Report:</strong><br/>`;
       scoreExplanation += `The overall health score is a weighted combination of five postures: <br/>`;
       scoreExplanation += `<span style="font-family: 'JetBrains Mono', monospace; color: var(--primary);">Overall Score = (Security × 30%) + (Reliability × 25%) + (Observability × 15%) + (Performance × 15%) + (Deployment × 15%)</span><br/>`;
-      scoreExplanation += `Specifically: <span style="font-family: 'JetBrains Mono', monospace;">(${sec} × 0.3) + (${rel} × 0.25) + (${obs} × 0.15) + (${perf} × 0.15) + (${dep} × 0.15) = <strong>${score}/100</strong></span>.<br/>`;
+      scoreExplanation += `Specifically: <span style="font-family: 'JetBrains Mono', monospace;">(${sec} × 0.3) + (${rel} × 0.25) + (${obs} × 0.15) + (${perf} × 0.15) + (${dep} × 0.15) = <strong>${score !== null ? score : '--'}/100</strong></span>.<br/>`;
 
       if (ruleHits && ruleHits.length > 0) {
         scoreExplanation += `<div style="margin-top: 8px; color: var(--error);">⚠️ <strong>Deterministic Clamping Applied:</strong> `;
@@ -710,7 +710,9 @@ document.addEventListener('DOMContentLoaded', () => {
     el.dimensionsContainer.innerHTML = '';
     dims.forEach(d => {
       const rawVal = pr[`${d.key}_score`];
-      const scoreVal = rawVal !== undefined && rawVal !== null ? clampScore(rawVal) : 100;
+      const scoreVal = rawVal !== undefined && rawVal !== null ? clampScore(rawVal) : null;
+      const displayScore = scoreVal !== null ? `${scoreVal}/100` : '--/100';
+      const barWidth = scoreVal !== null ? `${scoreVal}%` : '0%';
       const dimCard = document.createElement('div');
       dimCard.className = 'dimension-card';
       
@@ -722,10 +724,10 @@ document.addEventListener('DOMContentLoaded', () => {
       dimCard.innerHTML = `
         <div class="dim-header">
           <span class="dim-name">${escapeHtml(d.name)}</span>
-          <span class="dim-score">${scoreVal}/100</span>
+          <span class="dim-score">${displayScore}</span>
         </div>
         <div class="dim-bar-wrapper">
-          <div class="dim-bar" style="width: ${scoreVal}%; background: ${d.color}"></div>
+          <div class="dim-bar" style="width: ${barWidth}; background: ${d.color}"></div>
         </div>
         <div class="dim-notes">
           ${notesHtml}

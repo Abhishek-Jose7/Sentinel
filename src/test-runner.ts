@@ -149,6 +149,8 @@ class MockD1Database {
       return this.store.local_memories.filter(m => m.pattern_id === args[0] && m.repo_name === args[1]);
     } else if (cleanSql.includes('from local_memories where pattern_id =')) {
       return this.store.local_memories.filter(m => m.pattern_id === args[0]);
+    } else if (cleanSql.includes('from local_memories where repo_name =')) {
+      return this.store.local_memories.filter(m => m.repo_name === args[0]);
     }
     return [];
   }
@@ -230,9 +232,10 @@ async function runTests() {
   // Test 1: Deterministic Rule Engine
   console.log('\n--- Test 1: Deterministic Rule Engine ---');
   const mockFiles = {
-    'package.json': '{"dependencies": {}}',
+    'package.json': '{"dependencies": {}, "scripts": {"test": "jest"}}',
     'wrangler.toml': 'name = "test-worker"',
-    'src/index.ts': 'console.log("no health route, no logs, no env validation");\nprocess.env.DB_URL;'
+    'src/index.ts': 'console.log("no health route, no logs, no env validation");\nprocess.env.DB_URL;\n// sentry monitoring',
+    '.github/workflows/ci.yml': 'name: CI'
   };
   const mockDiff = 'await db.save(data);'; // unwrapped async call
 

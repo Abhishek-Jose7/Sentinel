@@ -20,12 +20,12 @@ CREATE TABLE IF NOT EXISTS pull_requests (
   pr_number INTEGER NOT NULL,
   title TEXT NOT NULL,
   state TEXT NOT NULL, -- 'open' | 'closed' | 'merged'
-  overall_score INTEGER DEFAULT 100,
-  security_score INTEGER DEFAULT 100,
-  reliability_score INTEGER DEFAULT 100,
-  observability_score INTEGER DEFAULT 100,
-  performance_score INTEGER DEFAULT 100,
-  deployment_score INTEGER DEFAULT 100,
+  overall_score INTEGER DEFAULT NULL,
+  security_score INTEGER DEFAULT NULL,
+  reliability_score INTEGER DEFAULT NULL,
+  observability_score INTEGER DEFAULT NULL,
+  performance_score INTEGER DEFAULT NULL,
+  deployment_score INTEGER DEFAULT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   FOREIGN KEY(repo_id) REFERENCES repositories(id) ON DELETE CASCADE

@@ -50,7 +50,32 @@ document.addEventListener('DOMContentLoaded', () => {
     userRole: document.getElementById('user-role'),
     repoMemoriesList: document.getElementById('repo-memories-list'),
     repoMemoryCountBadge: document.getElementById('repo-memory-count-badge'),
-    thoughtProcessText: document.getElementById('thought-process-text')
+    thoughtProcessText: document.getElementById('thought-process-text'),
+    // Vercel & Redesign HUD bindings
+    btnConnectVercel: document.getElementById('btn-connect-vercel'),
+    btnConnectVercelBody: document.getElementById('btn-connect-vercel-body'),
+    vercelLinkModal: document.getElementById('vercel-link-modal'),
+    btnCloseVercelModal: document.getElementById('btn-close-vercel-modal'),
+    vercelLinkForm: document.getElementById('vercel-link-form'),
+    vercelProjectSelect: document.getElementById('vercel-project-select'),
+    repoHealthValue: document.getElementById('repo-health-value'),
+    deployHealthValue: document.getElementById('deploy-health-value'),
+    lastScanTime: document.getElementById('last-scan-time'),
+    verifiedFindingsList: document.getElementById('verified-findings-list'),
+    recommendedFixesList: document.getElementById('recommended-fixes-list'),
+    predictConfidenceBadge: document.getElementById('predict-confidence-badge'),
+    predictFailurePoint: document.getElementById('predict-failure-point'),
+    predictFailureWhy: document.getElementById('predict-failure-why'),
+    predictFailureImpact: document.getElementById('predict-failure-impact'),
+    vercelStatusBadge: document.getElementById('vercel-status-badge'),
+    vercelConnectedView: document.getElementById('vercel-connected-view'),
+    vercelDisconnectedView: document.getElementById('vercel-disconnected-view'),
+    vercelSuccessRate: document.getElementById('vercel-success-rate'),
+    vercelFailedCount: document.getElementById('vercel-failed-count'),
+    vercelDeployCount: document.getElementById('vercel-deploy-count'),
+    vercelLastDeployDot: document.getElementById('vercel-last-deploy-dot'),
+    vercelLastDeployStatus: document.getElementById('vercel-last-deploy-status'),
+    vercelRiskDesc: document.getElementById('vercel-risk-desc')
   };
 
   // 1. Initial Load
@@ -297,6 +322,97 @@ document.addEventListener('DOMContentLoaded', () => {
         }
       });
     }
+    
+    // Connect Vercel triggers
+    if (el.btnConnectVercel) {
+      el.btnConnectVercel.addEventListener('click', loadVercelProjects);
+    }
+    if (el.btnConnectVercelBody) {
+      el.btnConnectVercelBody.addEventListener('click', loadVercelProjects);
+    }
+
+    // Window message listener for connection popup
+    window.addEventListener('message', async (event) => {
+      if (event.data && event.data.type === 'vercel-connected') {
+        alert('Vercel account connected successfully!');
+        await loadVercelProjects();
+      }
+    });
+
+    // Close Vercel Link modal
+    if (el.btnCloseVercelModal) {
+      el.btnCloseVercelModal.addEventListener('click', () => {
+        el.vercelLinkModal.classList.remove('active');
+      });
+    }
+
+    if (el.vercelLinkModal) {
+      el.vercelLinkModal.addEventListener('click', (e) => {
+        if (e.target === el.vercelLinkModal) {
+          el.vercelLinkModal.classList.remove('active');
+        }
+      });
+    }
+
+    // Link form submit
+    if (el.vercelLinkForm) {
+      el.vercelLinkForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const projectId = el.vercelProjectSelect.value;
+        const opt = el.vercelProjectSelect.options[el.vercelProjectSelect.selectedIndex];
+        const projectName = opt.text;
+        if (!state.selectedRepo || !projectId) return;
+
+        try {
+          const res = await authFetch(`/api/repos/${state.selectedRepo.owner}/${state.selectedRepo.name}/vercel`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ projectId, projectName })
+          });
+          if (res.ok) {
+            el.vercelLinkModal.classList.remove('active');
+            alert('Vercel project linked successfully! Starting codebase/deployment sync scan...');
+            startScanPolling(state.selectedRepo.owner, state.selectedRepo.name);
+          } else {
+            const data = await res.json();
+            alert(`Link failed: ${data.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          alert('Failed to link Vercel project.');
+        }
+      });
+    }
+  }
+
+  async function loadVercelProjects() {
+    try {
+      const res = await authFetch('/api/vercel/projects');
+      if (!res.ok) throw new Error('Failed to load Vercel projects');
+      const data = await res.json();
+      if (data.connected) {
+        // Connected! Populate select dropdown
+        el.vercelProjectSelect.innerHTML = '<option value="">-- Choose Vercel Project --</option>';
+        data.projects.forEach(p => {
+          const opt = document.createElement('option');
+          opt.value = p.id;
+          opt.text = p.name;
+          el.vercelProjectSelect.add(opt);
+        });
+        // Open linkage modal
+        el.vercelLinkModal.classList.add('active');
+      } else {
+        // Not connected: open popup redirecting to OAuth Initiate
+        const token = getJwt();
+        const width = 600;
+        const height = 700;
+        const left = (window.screen.width / 2) - (width / 2);
+        const top = (window.screen.height / 2) - (height / 2);
+        window.open(`/api/auth/vercel/connect?token=${encodeURIComponent(token || '')}`, 'VercelConnectPopup', `width=${width},height=${height},left=${left},top=${top}`);
+      }
+    } catch (e) {
+      console.error(e);
+      alert('Failed to connect to Vercel API connection service.');
+    }
   }
 
   // 3. API Loaders
@@ -515,24 +631,12 @@ document.addEventListener('DOMContentLoaded', () => {
       li.className = `repo-item ${isActive ? 'active' : ''}`;
       
       const proBadge = repo.is_pro ? '<span class="repo-pro-badge">PRO</span>' : '';
-      const repoScore = clampScore(repo.current_score);
-      
-      let scoreText = '--/100';
-      let scoreClass = 'unscanned';
-      
-      if (repoScore !== null) {
-        scoreText = `${repoScore}/100`;
-        if (repoScore >= 85) scoreClass = 'high';
-        else if (repoScore >= 70) scoreClass = 'med';
-        else scoreClass = 'low';
-      }
 
       li.innerHTML = `
         <div class="repo-icon">📦</div>
         <div class="repo-details">
           <div class="repo-name">${escapeHtml(repo.name)} ${proBadge}</div>
         </div>
-        <div class="repo-score ${scoreClass}">${scoreText}</div>
       `;
 
       li.addEventListener('click', () => {
@@ -601,10 +705,10 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   function renderPRDetails(data) {
-    const { pr, ruleHits, risks, patternMatches } = data;
+    const { pr, ruleHits, risks, patternMatches, vercelProject, vercelSnapshot } = data;
     
     // 1. Overall Score Ring Gauge
-    const score = clampScore(pr.overall_score);
+    let score = pr.combined_score !== null && pr.combined_score !== undefined ? clampScore(pr.combined_score) : clampScore(pr.overall_score);
     
     const circumference = 326; // 2 * pi * r (r=52)
     
@@ -626,24 +730,159 @@ document.addEventListener('DOMContentLoaded', () => {
       if (score >= 85) {
         el.scoreRing.style.stroke = 'var(--success)';
         el.scoreRing.style.filter = 'drop-shadow(0 0 8px var(--success-glow))';
-        el.scoreStatus.textContent = 'EXCELLENT';
+        el.scoreStatus.textContent = 'HEALTHY';
         el.scoreStatus.className = 'score-status-badge high';
         el.scoreStatus.style.background = 'var(--success-bg)';
         el.scoreStatus.style.color = 'var(--success)';
       } else if (score >= 70) {
         el.scoreRing.style.stroke = 'var(--warning)';
         el.scoreRing.style.filter = 'drop-shadow(0 0 8px var(--warning-glow))';
-        el.scoreStatus.textContent = 'WARN';
+        el.scoreStatus.textContent = 'WARNING';
         el.scoreStatus.className = 'score-status-badge med';
         el.scoreStatus.style.background = 'var(--warning-bg)';
         el.scoreStatus.style.color = 'var(--warning)';
       } else {
         el.scoreRing.style.stroke = 'var(--error)';
         el.scoreRing.style.filter = 'drop-shadow(0 0 8px var(--error-glow))';
-        el.scoreStatus.textContent = 'CRITICAL POSTURE';
+        el.scoreStatus.textContent = 'CRITICAL';
         el.scoreStatus.className = 'score-status-badge low';
         el.scoreStatus.style.background = 'var(--error-bg)';
         el.scoreStatus.style.color = 'var(--error)';
+      }
+    }
+
+    // Sub scores
+    if (el.repoHealthValue) {
+      el.repoHealthValue.textContent = pr.overall_score !== null && pr.overall_score !== undefined ? `${clampScore(pr.overall_score)}/100` : '--/100';
+    }
+    if (el.deployHealthValue) {
+      el.deployHealthValue.textContent = pr.deployment_health_score !== null && pr.deployment_health_score !== undefined ? `${clampScore(pr.deployment_health_score)}/100` : '--/100';
+    }
+    if (el.lastScanTime) {
+      el.lastScanTime.textContent = pr.updated_at ? new Date(pr.updated_at).toLocaleString() : '--';
+    }
+
+    // Predict predictions rendering
+    if (el.predictFailurePoint) {
+      el.predictFailurePoint.textContent = pr.predicted_failure_point || 'No failure point predicted.';
+    }
+    if (el.predictFailureWhy) {
+      el.predictFailureWhy.textContent = pr.predicted_failure_why || 'No explanation available.';
+    }
+    if (el.predictFailureImpact) {
+      el.predictFailureImpact.textContent = pr.predicted_failure_impact || 'No estimated impact available.';
+    }
+    if (el.predictConfidenceBadge) {
+      el.predictConfidenceBadge.textContent = pr.predicted_failure_confidence !== null && pr.predicted_failure_confidence !== undefined ? `${pr.predicted_failure_confidence}%` : '--%';
+    }
+
+    // Key Verified Findings (facts extracted)
+    if (el.verifiedFindingsList) {
+      el.verifiedFindingsList.innerHTML = '';
+      if (!ruleHits || ruleHits.length === 0) {
+        el.verifiedFindingsList.innerHTML = `<li style="color: var(--text-muted); font-size: 13px;">✓ All posture checks verified successfully.</li>`;
+      } else {
+        const displayHits = ruleHits.slice(0, 5);
+        displayHits.forEach(hit => {
+          const li = document.createElement('li');
+          li.style.display = 'flex';
+          li.style.alignItems = 'center';
+          li.style.gap = '8px';
+          li.style.color = '#fff';
+          li.style.fontSize = '13px';
+          li.innerHTML = `
+            <span style="color: #EF4444; font-weight: bold;">✗</span>
+            <span><strong>${escapeHtml(hit.dimension.toUpperCase())}:</strong> ${escapeHtml(hit.title || hit.rule_id)}</span>
+          `;
+          el.verifiedFindingsList.appendChild(li);
+        });
+      }
+    }
+
+    // Recommended Actions / Fixes
+    if (el.recommendedFixesList) {
+      el.recommendedFixesList.innerHTML = '';
+      let recommendedFixes = [];
+      if (pr.recommended_fixes) {
+        try {
+          recommendedFixes = JSON.parse(pr.recommended_fixes);
+        } catch (e) {
+          console.error('Failed to parse recommended_fixes:', e);
+        }
+      }
+      if (!recommendedFixes || recommendedFixes.length === 0) {
+        if (ruleHits && ruleHits.length > 0) {
+          recommendedFixes = ruleHits.map(h => `Add ${h.rule_id.replace('no-', '').replace(/-/g, ' ')}`);
+        }
+      }
+      if (!recommendedFixes || recommendedFixes.length === 0) {
+        el.recommendedFixesList.innerHTML = `<li style="color: var(--text-muted); list-style: none;">No recommended actions. Repository complies with all verified posture rules.</li>`;
+      } else {
+        recommendedFixes.forEach(fix => {
+          const li = document.createElement('li');
+          li.style.marginBottom = '6px';
+          li.innerHTML = `<span style="color: var(--text-bright);">${escapeHtml(fix)}</span>`;
+          el.recommendedFixesList.appendChild(li);
+        });
+      }
+    }
+
+    // Vercel Panel
+    if (el.vercelStatusBadge) {
+      if (vercelProject) {
+        el.vercelStatusBadge.textContent = `CONNECTED: ${vercelProject.project_name.toUpperCase()}`;
+        el.vercelStatusBadge.style.color = '#10B981';
+        el.vercelStatusBadge.style.background = 'rgba(16, 185, 129, 0.1)';
+        
+        if (el.vercelConnectedView) el.vercelConnectedView.style.display = 'block';
+        if (el.vercelDisconnectedView) el.vercelDisconnectedView.style.display = 'none';
+
+        if (vercelSnapshot) {
+          if (el.vercelSuccessRate) el.vercelSuccessRate.textContent = `${Math.round(vercelSnapshot.success_rate * 100)}%`;
+          if (el.vercelFailedCount) el.vercelFailedCount.textContent = vercelSnapshot.failed_count;
+          if (el.vercelDeployCount) el.vercelDeployCount.innerHTML = `7d: ${vercelSnapshot.deploys_7d}<br/>30d: ${vercelSnapshot.deploys_30d}`;
+          if (el.vercelLastDeployStatus) el.vercelLastDeployStatus.textContent = vercelSnapshot.last_status.toUpperCase();
+          
+          if (el.vercelLastDeployDot) {
+            const status = vercelSnapshot.last_status.toLowerCase();
+            let dotColor = 'var(--text-muted)';
+            if (status === 'ready' || status === 'success') {
+              dotColor = '#10B981';
+            } else if (status === 'error' || status === 'failed' || status === 'canceled') {
+              dotColor = '#EF4444';
+            } else if (status === 'building' || status === 'queued') {
+              dotColor = '#F59E0B';
+            }
+            el.vercelLastDeployDot.style.backgroundColor = dotColor;
+          }
+
+          if (el.vercelRiskDesc) {
+            if (vercelSnapshot.failed_count > 0) {
+              el.vercelRiskDesc.textContent = `Vercel build pipelines flag vulnerability with ${vercelSnapshot.failed_count} deployment failure(s) in the last 30 days. Last status: ${vercelSnapshot.last_status.toUpperCase()}.`;
+              el.vercelRiskDesc.style.color = '#EF4444';
+            } else {
+              el.vercelRiskDesc.textContent = `All deployments are fully operational with a ${Math.round(vercelSnapshot.success_rate * 100)}% production success rate.`;
+              el.vercelRiskDesc.style.color = 'var(--text-muted)';
+            }
+          }
+        } else {
+          if (el.vercelSuccessRate) el.vercelSuccessRate.textContent = '--';
+          if (el.vercelFailedCount) el.vercelFailedCount.textContent = '--';
+          if (el.vercelDeployCount) el.vercelDeployCount.textContent = '7d: -- / 30d: --';
+          if (el.vercelLastDeployStatus) el.vercelLastDeployStatus.textContent = 'UNKNOWN';
+          if (el.vercelLastDeployDot) el.vercelLastDeployDot.style.backgroundColor = 'var(--text-muted)';
+          if (el.vercelRiskDesc) {
+            el.vercelRiskDesc.textContent = 'Snapshot fetching active... Syncing current Vercel production metrics.';
+            el.vercelRiskDesc.style.color = 'var(--text-muted)';
+          }
+        }
+      } else {
+        el.vercelStatusBadge.textContent = 'NOT CONNECTED';
+        el.vercelStatusBadge.style.color = 'var(--text-muted)';
+        el.vercelStatusBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+        
+        if (el.vercelConnectedView) el.vercelConnectedView.style.display = 'none';
+        if (el.vercelDisconnectedView) el.vercelDisconnectedView.style.display = 'block';
       }
     }
 
@@ -756,25 +995,27 @@ document.addEventListener('DOMContentLoaded', () => {
       el.dimensionsContainer.appendChild(dimCard);
     });
 
-    // 4. Render Reasoning / Predicted Risks
-    el.risksList.innerHTML = '';
-    if (risks.length === 0) {
-      el.risksList.innerHTML = `<div class="empty-state"><p>No predicted risks reported for this reference.</p></div>`;
-    } else {
-      risks.forEach(risk => {
-        const item = document.createElement('div');
-        const severity = ['critical', 'warning', 'info'].includes(risk.severity) ? risk.severity : 'warning';
-        item.className = 'risk-item';
-        item.innerHTML = `
-          <div class="risk-item-header">
-            <span class="risk-title">${escapeHtml(risk.title)}</span>
-            <span class="risk-severity ${severity}">${severity}</span>
-          </div>
-          <div class="risk-location">${escapeHtml(risk.location)}</div>
-          <div class="risk-why">${escapeHtml(risk.why)}</div>
-        `;
-        el.risksList.appendChild(item);
-      });
+    // 4. Render Reasoning / Predicted Risks (Grounded safely)
+    if (el.risksList) {
+      el.risksList.innerHTML = '';
+      if (risks.length === 0) {
+        el.risksList.innerHTML = `<div class="empty-state"><p>No predicted risks reported for this reference.</p></div>`;
+      } else {
+        risks.forEach(risk => {
+          const item = document.createElement('div');
+          const severity = ['critical', 'warning', 'info'].includes(risk.severity) ? risk.severity : 'warning';
+          item.className = 'risk-item';
+          item.innerHTML = `
+            <div class="risk-item-header">
+              <span class="risk-title">${escapeHtml(risk.title)}</span>
+              <span class="risk-severity ${severity}">${severity}</span>
+            </div>
+            <div class="risk-location">${escapeHtml(risk.location)}</div>
+            <div class="risk-why">${escapeHtml(risk.why)}</div>
+          `;
+          el.risksList.appendChild(item);
+        });
+      }
     }
 
     // 5. Render Memory Panel
@@ -883,10 +1124,37 @@ document.addEventListener('DOMContentLoaded', () => {
     el.selectedPRTitle.textContent = 'No scans performed yet';
     el.analysisSummary.textContent = 'Run a manual sync scan or post a webhook check to audit this repository.';
     el.dimensionsContainer.innerHTML = '<div style="grid-column: 1/6; text-align: center; color: var(--text-muted); padding: 24px;">No scan dimension data available. Trigger a codebase scan above.</div>';
-    el.risksList.innerHTML = '<div class="empty-state"><p>Risk queue empty. Trigger scan to populate.</p></div>';
+    
+    if (el.risksList) {
+      el.risksList.innerHTML = '<div class="empty-state"><p>Risk queue empty. Trigger scan to populate.</p></div>';
+    }
     el.memoriesPanel.innerHTML = '<div class="empty-state"><p>Memory index empty.</p></div>';
     if (el.thoughtProcessText) {
       el.thoughtProcessText.textContent = "Run a codebase scan above to invoke the Groq reasoning engine and see step-by-step audit thoughts.";
     }
+
+    if (el.repoHealthValue) el.repoHealthValue.textContent = '--/100';
+    if (el.deployHealthValue) el.deployHealthValue.textContent = '--/100';
+    if (el.lastScanTime) el.lastScanTime.textContent = '--';
+
+    if (el.predictFailurePoint) el.predictFailurePoint.textContent = '--';
+    if (el.predictFailureWhy) el.predictFailureWhy.textContent = '--';
+    if (el.predictFailureImpact) el.predictFailureImpact.textContent = '--';
+    if (el.predictConfidenceBadge) el.predictConfidenceBadge.textContent = '--%';
+
+    if (el.verifiedFindingsList) {
+      el.verifiedFindingsList.innerHTML = '<li style="color: var(--text-muted); font-size: 13px;">No verified findings recorded. Perform a scan.</li>';
+    }
+    if (el.recommendedFixesList) {
+      el.recommendedFixesList.innerHTML = '<li style="color: var(--text-muted); list-style: none;">No actions recommended yet. Perform a scan.</li>';
+    }
+
+    if (el.vercelStatusBadge) {
+      el.vercelStatusBadge.textContent = 'NOT CONNECTED';
+      el.vercelStatusBadge.style.color = 'var(--text-muted)';
+      el.vercelStatusBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+    }
+    if (el.vercelConnectedView) el.vercelConnectedView.style.display = 'none';
+    if (el.vercelDisconnectedView) el.vercelDisconnectedView.style.display = 'block';
   }
 });

@@ -1,5 +1,7 @@
 // src/groq.ts
 
+import { VercelMetrics } from './vercel';
+
 export interface Risk {
   id: string; // kebab-case pattern ID, e.g. 'missing-retry-on-external-call'
   title: string;
@@ -19,6 +21,11 @@ export interface AnalysisResult {
   risks: Risk[];
   summary: string;
   thought_process: string;
+  predicted_failure_point?: string;
+  predicted_failure_why?: string;
+  predicted_failure_impact?: string;
+  predicted_failure_confidence?: number;
+  recommended_fixes?: string[];
 }
 
 export interface BaselineAnalysisInput {
@@ -28,6 +35,7 @@ export interface BaselineAnalysisInput {
   dimensions: Record<string, number>;
   hits: Array<{ id: string; dimension: string; penalty: number; title: string; description: string }>;
   memories: any[];
+  deploymentMetrics?: VercelMetrics;
 }
 
 export class GroqEngine {
@@ -70,6 +78,18 @@ export class GroqEngine {
     ].join('\n');
   }
 
+  private formatDeploymentMetricsForPrompt(metrics?: VercelMetrics): string {
+    if (!metrics) return 'No Vercel deployment metrics connected for this repository.';
+    return [
+      `Vercel Project Status: Connected`,
+      `Last Deployment Status: ${metrics.last_status}`,
+      `Success Rate: ${Math.round(metrics.success_rate * 100)}%`,
+      `Failed Deployment Count (30d): ${metrics.failed_count}`,
+      `Deployments in Last 7 Days: ${metrics.deploys_7d}`,
+      `Deployments in Last 30 Days: ${metrics.deploys_30d}`
+    ].join('\n');
+  }
+
   async analyzePR(
     repoName: string,
     prNumber: number,
@@ -77,7 +97,8 @@ export class GroqEngine {
     diff: string,
     facts: any,
     hits: Array<{ id: string; dimension: string; penalty: number; title: string; description: string }>,
-    memories: any[]
+    memories: any[],
+    deploymentMetrics?: VercelMetrics
   ): Promise<AnalysisResult> {
     if (!this.apiKey) {
       throw new Error('GROQ_API_KEY is not defined');
@@ -88,20 +109,27 @@ export class GroqEngine {
       ? memories.slice(0, 3).map((m, i) => `${i + 1}. [Pattern: ${m.metadata?.pattern || 'unknown'}] Content: ${m.content}`).join('\n')
       : 'No previous incidents or pattern matches stored in memory for this repo.';
 
-    const systemPrompt = `You are Sentinel's Groq Analysis Engine. Your job is to analyze a PR based on:
+    const systemPrompt = `You are Sentinel's Groq Prediction Engine. Your job is to analyze a PR based on:
 1. The list of changed files.
-2. The PR diff (which represents "Just the change", not entire files).
+2. The PR diff (representing just the change).
 3. The repository configuration facts.
 4. Historical pattern memories.
+5. Vercel deployment success/failure metrics (if connected).
 
-Assess the quality of the PR across 5 dimensions on a 0-100 scale:
-1. security: code vulnerabilities, dependency issues, secret leaks, raw environment reads.
-2. reliability: error handling, rate limiting, retries, race conditions.
-3. observability: logging completeness, metrics, health route status.
-4. performance: memory leaks, database query performance, high-latency blocks.
-5. deployment: config management, CI/CD compatibility, env verification.
+Reposition Sentinel's analysis from a mere static linter to an executive risk prediction system.
+- The Verify layer establishes facts (rate limiting, health endpoints, env validation, logs).
+- The Predict layer explains what is likely to break and why, and estimates impact.
+- The Recall layer connects findings to past incidents.
 
-Identify specific risks added/changed in this PR, especially noting if they match any of the past incidents or pattern memories provided.
+Assess the quality across 5 dimensions (0-100 scale): security, reliability, observability, performance, deployment.
+
+Identify specific risks added/changed in this PR.
+Generate an executive prediction of engineering risk:
+1. "predicted_failure_point": Most likely failure point (e.g. "Authentication service becomes unstable under traffic spikes").
+2. "predicted_failure_why": Explain why Sentinel believes this, linking it to the facts (e.g. no rate limiting found, etc.), deployment metrics (e.g., failed builds), and recalled patterns.
+3. "predicted_failure_impact": Estimated operational or business impact.
+4. "predicted_failure_confidence": An integer confidence percentage (0-100) representing how certain we are this failure is possible.
+5. "recommended_fixes": Array of specific, actionable fix recommendations (e.g., ["Add rate limiting", "Add health endpoint", "Implement structured logging"]).
 
 You must output a single, strictly valid JSON object matching the following TypeScript schema:
 {
@@ -117,15 +145,19 @@ You must output a single, strictly valid JSON object matching the following Type
       "id": "kebab-case-pattern-id-string",
       "title": "short description of risk",
       "location": "file_path.ts#Lline_number",
-      "why": "explanation of what could go wrong and how it fits patterns",
+      "why": "explanation of what could go wrong",
       "severity": "critical" | "warning" | "info"
     }
   ],
-  "summary": "1-2 sentence high-level summary of the analysis findings",
-  "thought_process": "detailed string explaining the LLM's thought process, reasoning steps, code quality evaluation, security considerations, and intermediate deductions during analysis of this PR and diff"
+  "summary": "1-2 sentence high-level summary of the findings",
+  "thought_process": "detailed string explaining the LLM's step-by-step reasoning",
+  "predicted_failure_point": "string",
+  "predicted_failure_why": "string",
+  "predicted_failure_impact": "string",
+  "predicted_failure_confidence": number,
+  "recommended_fixes": ["string"]
 }
 
-Ground all risks strictly in the diff or facts provided. Only penalize dimensions if the diff introduces issues, or if the repository facts indicate a lack of features.
 Provide ONLY the raw JSON output. No conversational wrapper, no markdown block formatting.`;
 
     const userPrompt = `Repository: ${repoName}
@@ -136,6 +168,9 @@ ${changedFiles.map(f => `- ${f}`).join('\n')}
 
 Repository Facts & Architecture:
 ${this.formatFactsForPrompt(facts)}
+
+Vercel Deployment Metrics:
+${this.formatDeploymentMetricsForPrompt(deploymentMetrics)}
 
 Deterministic Rule Hits in this PR:
 ${JSON.stringify(hits, null, 2)}
@@ -176,7 +211,7 @@ Analyze the changes and output your JSON:`;
       return this.parseJSONContent(jsonText);
     } catch (err) {
       console.error('Groq analysis query failed:', err);
-      // Calculate deterministic fallback from hits starting from 100
+      // Calculate deterministic fallback
       const fallbackDims = { security: 100, reliability: 100, observability: 100, performance: 100, deployment: 100 };
       for (const hit of hits) {
         const dim = hit.dimension as keyof typeof fallbackDims;
@@ -196,7 +231,12 @@ Analyze the changes and output your JSON:`;
           }
         ],
         summary: 'Groq analysis was bypassed due to API error. Local deterministic checks still apply.',
-        thought_process: `Groq LLM reasoning execution encountered an error: ${err instanceof Error ? err.message : String(err)}. Falling back to deterministic rules calculation.`
+        thought_process: `Groq LLM reasoning execution encountered an error: ${err instanceof Error ? err.message : String(err)}. Falling back to deterministic rules calculation.`,
+        predicted_failure_point: 'Unresolved deployment or repository scanning vulnerability.',
+        predicted_failure_why: 'LLM reasoning engine was unreachable. Static rules indicated potential vulnerabilities.',
+        predicted_failure_impact: 'High availability is at risk due to lack of verify compliance checks.',
+        predicted_failure_confidence: 50,
+        recommended_fixes: hits.map(h => `Add ${h.id.replace('no-', '')}`)
       };
     }
   }
@@ -210,24 +250,21 @@ Analyze the changes and output your JSON:`;
       ? input.memories.slice(0, 3).map((m, i) => `${i + 1}. [Pattern: ${m.metadata?.pattern || 'unknown'}] ${this.compactText(m.content || '', 600)}`).join('\n')
       : 'No matching repository memories found.';
 
-    const systemPrompt = `You are Sentinel's baseline analysis engine.
-You receive compact repository facts and deterministic scores, not full repository files.
-Generate a concise JSON-only baseline analysis. Do not invent file contents. Ground recommendations in the facts and rule hits provided.`;
+    const systemPrompt = `You are Sentinel's baseline prediction engine.
+You receive compact repository facts, Vercel deployment metrics, and memories.
+Reposition Sentinel's output from lint warnings to executive risk predictions:
+- The Verify layer establishes facts.
+- The Predict layer explains what is likely to break and why.
+- The Recall layer connects findings to past incidents.
 
-    const userPrompt = `Repository: ${input.repoName}
-Branch: ${input.branch}
+Generate a concise JSON-only baseline analysis. Ground failure predictions in the facts, deployment metrics, and rule hits provided.
 
-Repository Facts:
-${this.formatFactsForPrompt(input.facts)}
-
-Deterministic Dimension Scores:
-${JSON.stringify(input.dimensions, null, 2)}
-
-Rule Hits:
-${JSON.stringify(input.hits, null, 2)}
-
-Top Memories:
-${memories}
+Generate the executive prediction layer fields:
+1. "predicted_failure_point": Most likely failure point
+2. "predicted_failure_why": Explain why Sentinel believes this, referencing lack of verify facts or deployment indicators.
+3. "predicted_failure_impact": Business or operational impact
+4. "predicted_failure_confidence": An integer confidence percentage (0-100)
+5. "recommended_fixes": Array of recommended actions ordered by priority.
 
 Return JSON matching this schema:
 {
@@ -248,10 +285,35 @@ Return JSON matching this schema:
     }
   ],
   "summary": "1-2 sentence baseline readiness summary",
-  "thought_process": "detailed string explaining the LLM's thought process, reasoning steps, configuration review, risk calculations, and intermediate deductions during baseline assessment of the codebase"
+  "thought_process": "detailed string explaining the LLM's thought process",
+  "predicted_failure_point": "string",
+  "predicted_failure_why": "string",
+  "predicted_failure_impact": "string",
+  "predicted_failure_confidence": number,
+  "recommended_fixes": ["string"]
 }
 
-Keep dimensions close to the deterministic scores. Only adjust by at most 5 points per dimension if the facts justify it.`;
+Keep dimensions close to the deterministic scores.`;
+
+    const userPrompt = `Repository: ${input.repoName}
+Branch: ${input.branch}
+
+Repository Facts:
+${this.formatFactsForPrompt(input.facts)}
+
+Vercel Deployment Metrics:
+${this.formatDeploymentMetricsForPrompt(input.deploymentMetrics)}
+
+Deterministic Dimension Scores:
+${JSON.stringify(input.dimensions, null, 2)}
+
+Rule Hits:
+${JSON.stringify(input.hits, null, 2)}
+
+Top Memories:
+${memories}
+
+Return JSON matching this schema:`;
 
     try {
       const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
@@ -295,7 +357,12 @@ Keep dimensions close to the deterministic scores. Only adjust by at most 5 poin
           severity: hit.penalty >= 15 ? 'warning' : 'info'
         })),
         summary: 'Baseline analysis used deterministic repository facts because Groq reasoning was unavailable.',
-        thought_process: `Baseline Groq analysis query failed: ${err instanceof Error ? err.message : String(err)}. Substituted default deterministic fact models.`
+        thought_process: `Baseline Groq analysis query failed: ${err instanceof Error ? err.message : String(err)}. Substituted default deterministic fact models.`,
+        predicted_failure_point: 'Engineering reliability and security gaps detected.',
+        predicted_failure_why: 'Local checks flag several missing posture indicators.',
+        predicted_failure_impact: 'Lack of rate limiting and logging puts application availability at risk.',
+        predicted_failure_confidence: 60,
+        recommended_fixes: input.hits.map(h => `Add ${h.id.replace('no-', '')}`)
       };
     }
   }
@@ -326,7 +393,6 @@ Keep dimensions close to the deterministic scores. Only adjust by at most 5 poin
     try {
       const parsed = JSON.parse(cleanText);
       
-      // Look for dimensions and risks in various casings
       const rawDims = parsed.dimensions ?? parsed.Dimensions ?? parsed.DIMENSIONS ?? {};
       const risksList = parsed.risks ?? parsed.Risks ?? parsed.RISKS ?? [];
 
@@ -363,7 +429,12 @@ Keep dimensions close to the deterministic scores. Only adjust by at most 5 poin
             : 'warning'
         })) : [],
         summary: String(parsed.summary ?? parsed.Summary ?? parsed.SUMMARY ?? 'PR analysis completed.'),
-        thought_process: String(parsed.thought_process ?? parsed.thoughtProcess ?? parsed.ThoughtProcess ?? parsed.THOUGHT_PROCESS ?? 'LLM reasoning successfully completed. Codebase structures and historical patterns mapped against deterministic rule sets.')
+        thought_process: String(parsed.thought_process ?? parsed.thoughtProcess ?? parsed.ThoughtProcess ?? parsed.THOUGHT_PROCESS ?? 'LLM reasoning successfully completed.'),
+        predicted_failure_point: parsed.predicted_failure_point || parsed.predictedFailurePoint || undefined,
+        predicted_failure_why: parsed.predicted_failure_why || parsed.predictedFailureWhy || undefined,
+        predicted_failure_impact: parsed.predicted_failure_impact || parsed.predictedFailureImpact || undefined,
+        predicted_failure_confidence: parsed.predicted_failure_confidence !== undefined ? Number(parsed.predicted_failure_confidence) : undefined,
+        recommended_fixes: Array.isArray(parsed.recommended_fixes || parsed.recommendedFixes) ? (parsed.recommended_fixes || parsed.recommendedFixes) : undefined
       };
     } catch (err) {
       console.error('Failed to parse Groq response JSON:', err, '\nRaw Text:', text);

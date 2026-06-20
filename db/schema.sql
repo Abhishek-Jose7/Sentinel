@@ -10,7 +10,9 @@ CREATE TABLE IF NOT EXISTS repositories (
   license_key TEXT,
   is_pro BOOLEAN DEFAULT 0,
   scan_status TEXT DEFAULT 'idle',
-  scan_message TEXT DEFAULT ''
+  scan_message TEXT DEFAULT '',
+  deployment_health_score INTEGER DEFAULT NULL,
+  combined_score INTEGER DEFAULT NULL
 );
 
 -- Pull Request scans
@@ -29,6 +31,13 @@ CREATE TABLE IF NOT EXISTS pull_requests (
   thought_process TEXT DEFAULT NULL,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
   updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  deployment_health_score INTEGER DEFAULT NULL,
+  combined_score INTEGER DEFAULT NULL,
+  predicted_failure_point TEXT DEFAULT NULL,
+  predicted_failure_why TEXT DEFAULT NULL,
+  predicted_failure_impact TEXT DEFAULT NULL,
+  predicted_failure_confidence INTEGER DEFAULT NULL,
+  recommended_fixes TEXT DEFAULT NULL, -- JSON stringified array of strings
   FOREIGN KEY(repo_id) REFERENCES repositories(id) ON DELETE CASCADE
 );
 
@@ -69,3 +78,35 @@ CREATE TABLE IF NOT EXISTS local_memories (
   resolved BOOLEAN DEFAULT 0,
   created_at DATETIME DEFAULT CURRENT_TIMESTAMP
 );
+
+-- Vercel Integration Connections (linked to GitHub developer username/ID)
+CREATE TABLE IF NOT EXISTS vercel_connections (
+  user_id TEXT PRIMARY KEY, -- GitHub username
+  access_token TEXT NOT NULL,
+  team_id TEXT DEFAULT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+);
+
+-- Vercel Project linkages
+CREATE TABLE IF NOT EXISTS vercel_projects (
+  repo_id INTEGER PRIMARY KEY, -- Linked GitHub repo ID
+  project_id TEXT NOT NULL,
+  project_name TEXT NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(repo_id) REFERENCES repositories(id) ON DELETE CASCADE
+);
+
+-- Deployment Metrics Snapshots
+CREATE TABLE IF NOT EXISTS deployment_snapshots (
+  repo_id INTEGER PRIMARY KEY,
+  project_id TEXT NOT NULL,
+  success_rate REAL NOT NULL,
+  failed_count INTEGER NOT NULL,
+  last_status TEXT NOT NULL,
+  deploys_7d INTEGER NOT NULL,
+  deploys_30d INTEGER NOT NULL,
+  score INTEGER NOT NULL,
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+  FOREIGN KEY(repo_id) REFERENCES repositories(id) ON DELETE CASCADE
+);
+

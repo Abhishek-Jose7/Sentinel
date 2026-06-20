@@ -1,6 +1,7 @@
 import jwt from '@tsndr/cloudflare-worker-jwt';
 import { DbHelper } from './db';
 import { runDeterministicChecks, applyPenalties, extractRepositoryFacts, scoreFromFacts, calculateOverallScore } from './rules';
+import { VercelClient } from './vercel';
 import { ParcleClient } from './parcle';
 import { GroqEngine, AnalysisResult } from './groq';
 import { GitHubClient, verifyWebhookSignature, buildPRComment, buildPatternMatchSection } from './github';
@@ -15,6 +16,9 @@ export interface Env {
   GITHUB_CLIENT_ID?: string;
   GITHUB_CLIENT_SECRET?: string;
   JWT_SECRET?: string;
+  VERCEL_CLIENT_ID?: string;
+  VERCEL_CLIENT_SECRET?: string;
+  VERCEL_REDIRECT_URI?: string;
 }
 
 interface UserSession {
@@ -195,6 +199,151 @@ export default {
         }, jwtSecret, { algorithm: 'HS256' });
 
         return new Response(JSON.stringify({ token: jwtToken, user: { login, avatar_url: avatarUrl } }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+        });
+      }
+
+      // 1.3 Vercel OAuth Initiate Connection Redirect
+      if (path === '/api/auth/vercel/connect' && request.method === 'GET') {
+        const token = url.searchParams.get('token');
+        if (!token) {
+          return new Response('Missing JWT token', { status: 400 });
+        }
+        const clientId = env.VERCEL_CLIENT_ID || '';
+        const redirectUri = env.VERCEL_REDIRECT_URI || '';
+        const vercelAuthUrl = `https://vercel.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(token)}`;
+        return Response.redirect(vercelAuthUrl, 302);
+      }
+
+      // 1.4 Vercel OAuth Callback (handles token exchange and connection storage)
+      if (path === '/api/auth/vercel/callback' && request.method === 'GET') {
+        const code = url.searchParams.get('code');
+        const state = url.searchParams.get('state');
+
+        if (!code || !state) {
+          return new Response('Missing code or state parameters', { status: 400 });
+        }
+
+        // Verify state (GitHub JWT)
+        const jwtSecret = env.JWT_SECRET || 'sentinel-jwt-secret-fallback';
+        let session: UserSession | null = null;
+        try {
+          const isValid = await jwt.verify(state, jwtSecret);
+          if (isValid) {
+            const decoded = jwt.decode(state);
+            session = decoded.payload as UserSession;
+          }
+        } catch (e) {
+          console.error('Vercel state verification failed:', e);
+        }
+
+        if (!session) {
+          return new Response('Unauthorized: Invalid state parameter', { status: 401 });
+        }
+
+        try {
+          const vercel = new VercelClient();
+          const { access_token, user_id, team_id } = await vercel.exchangeOAuthCode(
+            code,
+            env.VERCEL_CLIENT_ID || '',
+            env.VERCEL_CLIENT_SECRET || '',
+            env.VERCEL_REDIRECT_URI || ''
+          );
+
+          await db.upsertVercelConnection(session.login, access_token, team_id);
+
+          return new Response(`
+            <!DOCTYPE html>
+            <html>
+              <head>
+                <title>Vercel Connected</title>
+                <script>
+                  if (window.opener) {
+                    window.opener.postMessage({ type: 'vercel-connected' }, '*');
+                  }
+                  window.close();
+                </script>
+              </head>
+              <body style="background: #0d1117; color: #fff; font-family: -apple-system, sans-serif; display: flex; align-items: center; justify-content: center; height: 100vh; flex-direction: column;">
+                <h2 style="color: #00FF66; margin-bottom: 8px;">✓ Vercel Connected Successfully!</h2>
+                <p style="color: #8b949e;">This popup window will close automatically.</p>
+              </body>
+            </html>
+          `, { headers: { 'Content-Type': 'text/html' } });
+        } catch (err) {
+          console.error('Vercel OAuth exchange error:', err);
+          return new Response(`Vercel connection failed: ${err instanceof Error ? err.message : String(err)}`, { status: 500 });
+        }
+      }
+
+      // 1.5 Vercel List Projects
+      if (path === '/api/vercel/projects' && request.method === 'GET') {
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        const conn = await db.getVercelConnection(session.login);
+        if (!conn) {
+          return new Response(JSON.stringify({ projects: [], connected: false }), {
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        try {
+          const client = new VercelClient(conn.access_token, conn.team_id);
+          const projects = await client.fetchProjects();
+          return new Response(JSON.stringify({ projects, connected: true }), {
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        } catch (e) {
+          console.error('Error fetching Vercel projects:', e);
+          return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+      }
+
+      // 1.6 Link Vercel Project to Repo
+      const linkVercelMatch = path.match(/^\/api\/repos\/([^\/]+)\/([^\/]+)\/vercel$/);
+      if (linkVercelMatch && request.method === 'POST') {
+        const owner = linkVercelMatch[1];
+        const name = linkVercelMatch[2];
+
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        const repo = await db.getRepo(owner, name);
+        if (!repo) {
+          return new Response(JSON.stringify({ error: 'Repository not found' }), {
+            status: 404,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        const { projectId, projectName } = await request.json() as any;
+        if (!projectId || !projectName) {
+          return new Response(JSON.stringify({ error: 'Missing projectId or projectName' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        await db.upsertVercelProject(repo.id, projectId, projectName);
+
+        // Trigger codebase sync (background routine) to compute Vercel metrics
+        ctx.waitUntil(runRepositorySync(owner, name, env, session.accessToken));
+
+        return new Response(JSON.stringify({ message: 'Vercel project linked successfully' }), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }
         });
       }
@@ -447,7 +596,17 @@ export default {
           memories: patternMatches[i]
         })).filter(m => m.memories.length > 0);
 
-        return new Response(JSON.stringify({ pr, ruleHits: hits, risks, patternMatches: matchedHistory }), {
+        const vercelProject = await db.getVercelProject(repo.id);
+        const vercelSnapshot = await db.getLatestDeploymentSnapshot(repo.id);
+
+        return new Response(JSON.stringify({ 
+          pr, 
+          ruleHits: hits, 
+          risks, 
+          patternMatches: matchedHistory,
+          vercelProject,
+          vercelSnapshot
+        }), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }
         });
       }
@@ -704,12 +863,32 @@ async function runAuditLoop(payload: any, env: Env) {
       memories: patternMatches[idx]
     })).filter(m => m.memories.length > 0);
 
-    // 7. Reasoning loop: feed diff + facts + rule hits + recalled memories to Groq
+    // 7. Check Vercel project linkage and fetch latest deployment snapshot
+    const vercelProject = await db.getVercelProject(repository.id);
+    let vercelSnapshot = null;
+    let deploymentHealthScore: number | null = null;
+    let deploymentMetrics = undefined;
+
+    if (vercelProject) {
+      vercelSnapshot = await db.getLatestDeploymentSnapshot(repository.id);
+      if (vercelSnapshot) {
+        deploymentHealthScore = vercelSnapshot.score;
+        deploymentMetrics = {
+          success_rate: vercelSnapshot.success_rate,
+          failed_count: vercelSnapshot.failed_count,
+          last_status: vercelSnapshot.last_status,
+          deploys_7d: vercelSnapshot.deploys_7d,
+          deploys_30d: vercelSnapshot.deploys_30d
+        };
+      }
+    }
+
+    // 8. Reasoning loop: feed diff + facts + rule hits + recalled memories + deployment metrics to Groq
     const facts = extractRepositoryFacts(files);
     const recalledMemoriesList = matchedHistory.flatMap(m => m.memories);
-    const analysis = await groq.analyzePR(repoFullName, prNumber, prTitle, diff, facts, hits, recalledMemoriesList);
+    const analysis = await groq.analyzePR(repoFullName, prNumber, prTitle, diff, facts, hits, recalledMemoriesList, deploymentMetrics);
 
-    // 8. Apply Clamping / Penalties to create hybrid scores
+    // 9. Apply Clamping / Penalties to create hybrid scores
     const { dimensions, penaltiesByDimension } = applyPenalties(analysis.dimensions, hits);
     
     // Weighted scoring formula
@@ -721,7 +900,11 @@ async function runAuditLoop(payload: any, env: Env) {
       (dimensions.deployment * 0.15)
     );
 
-    // 9. Store Scan results in database
+    const combinedScore = deploymentHealthScore !== null 
+      ? Math.round(overallScore * 0.6 + deploymentHealthScore * 0.4) 
+      : overallScore;
+
+    // 10. Store Scan results in database
     await db.upsertPR({
       id: prId,
       repo_id: repository.id,
@@ -734,7 +917,14 @@ async function runAuditLoop(payload: any, env: Env) {
       observability_score: dimensions.observability,
       performance_score: dimensions.performance,
       deployment_score: dimensions.deployment,
-      thought_process: analysis.summary ? `SUMMARY: ${analysis.summary}\n\nTHOUGHT PROCESS:\n${analysis.thought_process || ''}` : (analysis.thought_process || null)
+      thought_process: analysis.summary ? `SUMMARY: ${analysis.summary}\n\nTHOUGHT PROCESS:\n${analysis.thought_process || ''}` : (analysis.thought_process || null),
+      deployment_health_score: deploymentHealthScore,
+      combined_score: combinedScore,
+      predicted_failure_point: analysis.predicted_failure_point || null,
+      predicted_failure_why: analysis.predicted_failure_why || null,
+      predicted_failure_impact: analysis.predicted_failure_impact || null,
+      predicted_failure_confidence: analysis.predicted_failure_confidence || null,
+      recommended_fixes: analysis.recommended_fixes ? JSON.stringify(analysis.recommended_fixes) : null
     });
 
     await db.clearPRRuleHits(prId);
@@ -763,10 +953,10 @@ async function runAuditLoop(payload: any, env: Env) {
       });
     }
 
-    // Update repository current score
-    await db.updateRepoScore(repository.id, overallScore);
+    // Update repository current score, deployment score, and combined score
+    await db.updateRepoScore(repository.id, overallScore, deploymentHealthScore, combinedScore);
 
-    // 10. Store patterns back in Memory (Recall -> Reason -> Store loop)
+    // 11. Store patterns back in Memory (Recall -> Reason -> Store loop)
     for (const hit of hits) {
       await parcle.storePattern(
         `[PR #${prNumber}] Deterministic rule hit: "${hit.title}" in ${repoFullName}. ${hit.description}`,
@@ -785,7 +975,7 @@ async function runAuditLoop(payload: any, env: Env) {
       );
     }
 
-    // 11. Format & Post Check Run and Comments
+    // 12. Format & Post Check Run and Comments
     const patternSection = buildPatternMatchSection(matchedHistory);
     const commentMarkdown = buildPRComment(
       prNumber,
@@ -794,7 +984,14 @@ async function runAuditLoop(payload: any, env: Env) {
       penaltiesByDimension,
       analysis.risks,
       patternSection,
-      analysis.summary
+      analysis.summary,
+      analysis.predicted_failure_point,
+      analysis.predicted_failure_why,
+      analysis.predicted_failure_impact,
+      analysis.predicted_failure_confidence,
+      analysis.recommended_fixes,
+      deploymentHealthScore,
+      combinedScore
     );
 
     // Post to PR
@@ -928,11 +1125,45 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     
     // Baseline score calculation
     const deterministicDimensions = scoreFromFacts(hits);
-    const fallbackDimensions = { security: 100, reliability: 100, observability: 100, performance: 100, deployment: 100 };
     const overallScore = calculateOverallScore(deterministicDimensions);
-
-    // Removed premature repository score update to prevent showing 100/100 or incomplete scores during scans.
     console.log(`Baseline score for ${repoFullName} computed: ${overallScore}`);
+
+    // Check Vercel project linkage and connection
+    const project = await db.getVercelProject(repoId);
+    let connection = null;
+    let deploymentHealthScore: number | null = null;
+    let deploymentMetrics = undefined;
+    let deploymentsList: any[] = [];
+
+    if (project) {
+      // Find any active Vercel connection
+      connection = await db.db.prepare('SELECT * FROM vercel_connections LIMIT 1').first();
+      if (connection) {
+        await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 3.5/7: Scanning Vercel deployments and calculating metrics...');
+        try {
+          const vercel = new VercelClient(connection.access_token, connection.team_id);
+          deploymentsList = await vercel.fetchDeployments(project.project_id);
+          const metrics = vercel.calculateDeploymentMetrics(deploymentsList);
+          deploymentHealthScore = vercel.calculateDeploymentHealthScore(metrics, deploymentsList);
+          deploymentMetrics = metrics;
+
+          // Insert snapshot
+          await db.insertDeploymentSnapshot({
+            repo_id: repoId,
+            project_id: project.project_id,
+            success_rate: metrics.success_rate,
+            failed_count: metrics.failed_count,
+            last_status: metrics.last_status,
+            deploys_7d: metrics.deploys_7d,
+            deploys_30d: metrics.deploys_30d,
+            score: deploymentHealthScore
+          });
+          console.log(`Vercel deployments scanned. Health Score: ${deploymentHealthScore}`);
+        } catch (err) {
+          console.error('Failed to sync Vercel metrics:', err);
+        }
+      }
+    }
 
     // Save Baseline PR #0 Scan record in D1 so the dashboard is immediately populated
     const baselinePrId = `${repoFullName}/pull/0`;
@@ -950,7 +1181,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
         facts,
         dimensions: deterministicDimensions,
         hits,
-        memories: baselineMemories
+        memories: baselineMemories,
+        deploymentMetrics
       });
     } catch (e) {
       console.error(`Groq baseline analysis query failed:`, e);
@@ -970,12 +1202,20 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
           severity: (hit.penalty >= 15 ? 'warning' : 'info') as 'warning' | 'info'
         })),
         summary: 'Baseline posture scan computed deterministic rules checks.',
-        thought_process: `Groq baseline analysis execution failed: ${e instanceof Error ? e.message : String(e)}. Executed deterministic checklist analysis.`
+        thought_process: `Groq baseline analysis execution failed: ${e instanceof Error ? e.message : String(e)}. Executed deterministic checklist analysis.`,
+        predicted_failure_point: 'Engineering reliability and security gaps detected.',
+        predicted_failure_why: 'Local checks flag several missing posture indicators.',
+        predicted_failure_impact: 'Lack of rate limiting and logging puts application availability at risk.',
+        predicted_failure_confidence: 60,
+        recommended_fixes: hits.map(h => `Add ${h.id.replace('no-', '')}`)
       };
     }
 
     const baselineClamped = applyPenalties(baselineAnalysis.dimensions, hits);
     const baselineOverallScore = calculateOverallScore(baselineClamped.dimensions);
+    const combinedScore = deploymentHealthScore !== null
+      ? Math.round(baselineOverallScore * 0.6 + deploymentHealthScore * 0.4)
+      : baselineOverallScore;
 
     await db.upsertPR({
       id: baselinePrId,
@@ -989,7 +1229,14 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       observability_score: baselineClamped.dimensions.observability,
       performance_score: baselineClamped.dimensions.performance,
       deployment_score: baselineClamped.dimensions.deployment,
-      thought_process: baselineAnalysis.summary ? `SUMMARY: ${baselineAnalysis.summary}\n\nTHOUGHT PROCESS:\n${baselineAnalysis.thought_process || ''}` : (baselineAnalysis.thought_process || null)
+      thought_process: baselineAnalysis.summary ? `SUMMARY: ${baselineAnalysis.summary}\n\nTHOUGHT PROCESS:\n${baselineAnalysis.thought_process || ''}` : (baselineAnalysis.thought_process || null),
+      deployment_health_score: deploymentHealthScore,
+      combined_score: combinedScore,
+      predicted_failure_point: baselineAnalysis.predicted_failure_point || null,
+      predicted_failure_why: baselineAnalysis.predicted_failure_why || null,
+      predicted_failure_impact: baselineAnalysis.predicted_failure_impact || null,
+      predicted_failure_confidence: baselineAnalysis.predicted_failure_confidence || null,
+      recommended_fixes: baselineAnalysis.recommended_fixes ? JSON.stringify(baselineAnalysis.recommended_fixes) : null
     });
 
     // Insert baseline rule hits
@@ -1106,7 +1353,14 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
             observability_score: commitClamped.dimensions.observability,
             performance_score: commitClamped.dimensions.performance,
             deployment_score: commitClamped.dimensions.deployment,
-            thought_process: 'Historical commit scan successfully verified against local deterministic rules. Groq LLM reasoning was bypassed to conserve API limits.'
+            thought_process: 'Historical commit scan successfully verified against local deterministic rules. Groq LLM reasoning was bypassed to conserve API limits.',
+            deployment_health_score: null,
+            combined_score: null,
+            predicted_failure_point: null,
+            predicted_failure_why: null,
+            predicted_failure_impact: null,
+            predicted_failure_confidence: null,
+            recommended_fixes: null
           });
 
           // Insert rule hits
@@ -1213,7 +1467,14 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
           observability_score: clamped.dimensions.observability,
           performance_score: clamped.dimensions.performance,
           deployment_score: clamped.dimensions.deployment,
-          thought_process: 'Historical PR scan successfully verified against local deterministic rules. Groq LLM reasoning was bypassed to conserve API limits.'
+          thought_process: 'Historical PR scan successfully verified against local deterministic rules. Groq LLM reasoning was bypassed to conserve API limits.',
+          deployment_health_score: null,
+          combined_score: null,
+          predicted_failure_point: null,
+          predicted_failure_why: null,
+          predicted_failure_impact: null,
+          predicted_failure_confidence: null,
+          recommended_fixes: null
         });
 
         // Insert rule hits
@@ -1260,7 +1521,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       }
     }
 
-    await db.updateRepoScore(repoId, baselineOverallScore);
+    await db.updateRepoScore(repoId, baselineOverallScore, deploymentHealthScore, combinedScore);
     await db.updateRepoScanStatus(repoId, 'completed', 'Scan completed successfully.');
     const duration = Date.now() - startTime;
     console.log(`Repository sync for ${repoFullName} completed successfully. Sync Metrics: Scanned Files: ${facts.scannedFileCount}, Rule Hits: ${hits.length}, Memories Recalled: ${baselineMemories.length}, Duration: ${duration}ms`);

@@ -10,6 +10,8 @@ export interface DbRepo {
   is_pro: number; // 0 or 1
   scan_status: string;
   scan_message: string;
+  deployment_health_score: number | null;
+  combined_score: number | null;
 }
 
 export interface DbPR {
@@ -27,6 +29,13 @@ export interface DbPR {
   thought_process: string | null;
   created_at: string;
   updated_at: string;
+  deployment_health_score: number | null;
+  combined_score: number | null;
+  predicted_failure_point: string | null;
+  predicted_failure_why: string | null;
+  predicted_failure_impact: string | null;
+  predicted_failure_confidence: number | null;
+  recommended_fixes: string | null; // JSON array of strings
 }
 
 export interface DbRuleHit {
@@ -51,8 +60,34 @@ export interface DbRisk {
   created_at: string;
 }
 
+export interface DbVercelConnection {
+  user_id: string;
+  access_token: string;
+  team_id: string | null;
+  created_at: string;
+}
+
+export interface DbVercelProject {
+  repo_id: number;
+  project_id: string;
+  project_name: string;
+  created_at: string;
+}
+
+export interface DbDeploymentSnapshot {
+  repo_id: number;
+  project_id: string;
+  success_rate: number;
+  failed_count: number;
+  last_status: string;
+  deploys_7d: number;
+  deploys_30d: number;
+  score: number;
+  created_at?: string;
+}
+
 export class DbHelper {
-  private db: any; // D1Database
+  db: any; // D1Database
 
   constructor(db: any) {
     this.db = db;
@@ -75,11 +110,11 @@ export class DbHelper {
     ).bind(id, owner, name).run();
   }
 
-  async updateRepoScore(id: number, score: number): Promise<void> {
+  async updateRepoScore(id: number, score: number, deploymentHealthScore: number | null = null, combinedScore: number | null = null): Promise<void> {
     if (!this.db) return;
     await this.db.prepare(
-      'UPDATE repositories SET current_score = ? WHERE id = ?'
-    ).bind(score, id).run();
+      'UPDATE repositories SET current_score = ?, deployment_health_score = ?, combined_score = ? WHERE id = ?'
+    ).bind(score, deploymentHealthScore, combinedScore, id).run();
   }
 
   async updateRepoScanStatus(id: number, status: string, message: string): Promise<void> {
@@ -140,9 +175,11 @@ export class DbHelper {
       `INSERT INTO pull_requests (
         id, repo_id, pr_number, title, state, overall_score,
         security_score, reliability_score, observability_score, performance_score, deployment_score,
-        thought_process, created_at, updated_at
+        thought_process, deployment_health_score, combined_score,
+        predicted_failure_point, predicted_failure_why, predicted_failure_impact, predicted_failure_confidence,
+        recommended_fixes, created_at, updated_at
        ) 
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
        ON CONFLICT(id) DO UPDATE SET 
          title=excluded.title, 
          state=excluded.state, 
@@ -153,11 +190,20 @@ export class DbHelper {
          performance_score=excluded.performance_score, 
          deployment_score=excluded.deployment_score,
          thought_process=excluded.thought_process,
+         deployment_health_score=excluded.deployment_health_score,
+         combined_score=excluded.combined_score,
+         predicted_failure_point=excluded.predicted_failure_point,
+         predicted_failure_why=excluded.predicted_failure_why,
+         predicted_failure_impact=excluded.predicted_failure_impact,
+         predicted_failure_confidence=excluded.predicted_failure_confidence,
+         recommended_fixes=excluded.recommended_fixes,
          updated_at=excluded.updated_at`
     ).bind(
       pr.id, pr.repo_id, pr.pr_number, pr.title, pr.state, pr.overall_score,
       pr.security_score, pr.reliability_score, pr.observability_score, pr.performance_score, pr.deployment_score,
-      pr.thought_process, now, now
+      pr.thought_process, pr.deployment_health_score, pr.combined_score,
+      pr.predicted_failure_point, pr.predicted_failure_why, pr.predicted_failure_impact, pr.predicted_failure_confidence,
+      pr.recommended_fixes, now, now
     ).run();
   }
 
@@ -189,5 +235,59 @@ export class DbHelper {
     ).bind(
       risk.id, risk.pr_id, risk.pattern_id, risk.title, risk.location, risk.why, risk.severity
     ).run();
+  }
+
+  // --- Vercel Integration DB Helpers ---
+
+  async getVercelConnection(userId: string): Promise<DbVercelConnection | null> {
+    if (!this.db) return null;
+    const res = await this.db.prepare(
+      'SELECT * FROM vercel_connections WHERE user_id = ?'
+    ).bind(userId).first();
+    return res as DbVercelConnection | null;
+  }
+
+  async upsertVercelConnection(userId: string, accessToken: string, teamId: string | null): Promise<void> {
+    if (!this.db) return;
+    await this.db.prepare(
+      `INSERT INTO vercel_connections (user_id, access_token, team_id) 
+       VALUES (?, ?, ?) 
+       ON CONFLICT(user_id) DO UPDATE SET access_token=excluded.access_token, team_id=excluded.team_id`
+    ).bind(userId, accessToken, teamId).run();
+  }
+
+  async getVercelProject(repoId: number): Promise<DbVercelProject | null> {
+    if (!this.db) return null;
+    const res = await this.db.prepare(
+      'SELECT * FROM vercel_projects WHERE repo_id = ?'
+    ).bind(repoId).first();
+    return res as DbVercelProject | null;
+  }
+
+  async upsertVercelProject(repoId: number, projectId: string, projectName: string): Promise<void> {
+    if (!this.db) return;
+    await this.db.prepare(
+      `INSERT INTO vercel_projects (repo_id, project_id, project_name) 
+       VALUES (?, ?, ?) 
+       ON CONFLICT(repo_id) DO UPDATE SET project_id=excluded.project_id, project_name=excluded.project_name`
+    ).bind(repoId, projectId, projectName).run();
+  }
+
+  async insertDeploymentSnapshot(snapshot: DbDeploymentSnapshot): Promise<void> {
+    if (!this.db) return;
+    await this.db.prepare(
+      `INSERT OR REPLACE INTO deployment_snapshots (repo_id, project_id, success_rate, failed_count, last_status, deploys_7d, deploys_30d, score) 
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?)`
+    ).bind(
+      snapshot.repo_id, snapshot.project_id, snapshot.success_rate, snapshot.failed_count, snapshot.last_status, snapshot.deploys_7d, snapshot.deploys_30d, snapshot.score
+    ).run();
+  }
+
+  async getLatestDeploymentSnapshot(repoId: number): Promise<DbDeploymentSnapshot | null> {
+    if (!this.db) return null;
+    const res = await this.db.prepare(
+      'SELECT * FROM deployment_snapshots WHERE repo_id = ?'
+    ).bind(repoId).first();
+    return res as DbDeploymentSnapshot | null;
   }
 }

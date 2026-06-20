@@ -33,7 +33,11 @@ document.addEventListener('DOMContentLoaded', () => {
     proForm: document.getElementById('pro-form'),
     licenseKeyInput: document.getElementById('license-key'),
     formError: document.getElementById('form-error'),
-    btnSyncRepo: document.getElementById('btn-sync-repo')
+    btnSyncRepo: document.getElementById('btn-sync-repo'),
+    emptySyncForm: document.getElementById('empty-sync-form'),
+    syncOwnerInput: document.getElementById('sync-owner'),
+    syncRepoInput: document.getElementById('sync-repo'),
+    btnEmptySync: document.getElementById('btn-empty-sync')
   };
 
   // 1. Initial Load
@@ -142,6 +146,42 @@ document.addEventListener('DOMContentLoaded', () => {
             }, 5000);
           } else {
             alert(`Sync failed: ${data.error || 'Unknown error'}`);
+          }
+        } catch (err) {
+          alert('Failed to connect to sync endpoint.');
+        } finally {
+          btn.disabled = false;
+          btn.innerHTML = originalText;
+        }
+      });
+    }
+
+    // Empty state: Manual Import & Sync
+    if (el.emptySyncForm) {
+      el.emptySyncForm.addEventListener('submit', async (e) => {
+        e.preventDefault();
+        const owner = el.syncOwnerInput.value.trim();
+        const repo = el.syncRepoInput.value.trim();
+        if (!owner || !repo) return;
+
+        const btn = el.btnEmptySync;
+        const originalText = btn.innerHTML;
+        
+        btn.disabled = true;
+        btn.innerHTML = '🔄 Syncing...';
+
+        try {
+          const res = await fetch(`/api/repos/${owner}/${repo}/sync`, {
+            method: 'POST'
+          });
+          const data = await res.json();
+          if (res.ok) {
+            alert('Repository import and scan queued successfully. Old PRs are backfilling in the background. The dashboard will load in 5 seconds.');
+            setTimeout(async () => {
+              await loadRepositories();
+            }, 5000);
+          } else {
+            alert(`Import failed: ${data.error || 'Unknown error'}`);
           }
         } catch (err) {
           alert('Failed to connect to sync endpoint.');

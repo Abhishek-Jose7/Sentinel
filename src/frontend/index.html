@@ -133,10 +133,23 @@
         <div class="empty-logo">🛡️</div>
         <h2>Welcome to Sentinel</h2>
         <p>No audited repositories detected. Install the Sentinel GitHub App to begin scanning your codebase automatically on every pull request push.</p>
+        
+        <div class="sync-first-repo-box">
+          <h3>🔄 Or Import & Sync Repository Manually</h3>
+          <form id="empty-sync-form" class="empty-sync-form">
+            <div class="input-row">
+              <input type="text" id="sync-owner" placeholder="github-owner" required autocomplete="off">
+              <span class="slash">/</span>
+              <input type="text" id="sync-repo" placeholder="repository-name" required autocomplete="off">
+            </div>
+            <button type="submit" class="btn btn-primary" id="btn-empty-sync">Import & Sync Repo</button>
+          </form>
+        </div>
+
         <div class="mock-setup-box">
-          <h3>🚀 Local MVP Webhook URL</h3>
-          <code>http://localhost:8787/webhook</code>
-          <p class="hint">Point your GitHub webhook payload address here to dispatch scan triggers.</p>
+          <h3>🚀 Webhook Payload URL</h3>
+          <code>https://sentinel-worker.hangoutt.workers.dev/webhook</code>
+          <p class="hint">Point your GitHub App webhook URL here to listen for real-time audit triggers.</p>
         </div>
       </div>
     </main>

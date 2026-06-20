@@ -31,16 +31,45 @@ export class ParcleClient {
   async store(content: string, tags: string[], metadata?: any): Promise<void> {
     if (this.apiKey) {
       try {
-        const res = await fetch('https://api.parcle.ai/v1/memories', {
+        const repo = metadata?.repo || (tags && tags[1]) || 'sentinel-default';
+        const userId = repo.split('/')[0] || 'sentinel_user';
+        const pattern = metadata?.pattern || tags[0] || 'unknown';
+        const prNumber = metadata?.prNumber || 0;
+        const resolved = metadata?.resolved ? true : false;
+
+        // Register user first
+        await fetch('https://api.parcle.ai/v1/users', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            content,
-            tags,
-            metadata
+            user_id: userId,
+            name: userId
+          })
+        });
+
+        const res = await fetch('https://api.parcle.ai/v1/memories/ingest_dialog', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            user_id: userId,
+            messages: [
+              {
+                role: 'user',
+                content: content
+              }
+            ],
+            tag: {
+              repo,
+              pattern,
+              prNumber,
+              resolved
+            }
           })
         });
         if (!res.ok) {
@@ -59,23 +88,82 @@ export class ParcleClient {
   async recall(query: string, limit = 4): Promise<PatternMemory[]> {
     if (this.apiKey) {
       try {
-        const res = await fetch('https://api.parcle.ai/v1/memories/search', {
+        const repoMatch = query.match(/repo:(\S+)/);
+        const repo = repoMatch ? repoMatch[1] : 'sentinel-default';
+        const userId = repo.split('/')[0] || 'sentinel_user';
+
+        const tagFilter: any = { repo };
+        const patternMatch = query.match(/pattern:(\S+)/);
+        if (patternMatch) {
+          tagFilter.pattern = patternMatch[1];
+        }
+
+        const res = await fetch('https://api.parcle.ai/v1/memories/sources', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            query,
-            limit
+            user_id: userId,
+            tag_filter: tagFilter,
+            limit: limit
           })
         });
-        if (res.ok) {
-          const data = await res.json() as any;
-          return data.memories || [];
+
+        if (!res.ok) {
+          console.error(`Parcle search API error: ${res.status} ${await res.text()}`);
+          return this.recallLocal(query, limit);
         }
-        console.error(`Parcle search API error: ${res.status} ${await res.text()}`);
-        return this.recallLocal(query, limit);
+
+        const data = await res.json() as any;
+        const sources = data.sources || [];
+        const memories: PatternMemory[] = [];
+
+        for (const source of sources) {
+          if (source.type === 'session') {
+            try {
+              const sessRes = await fetch('https://api.parcle.ai/v1/memories/sessions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${this.apiKey}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  user_id: userId,
+                  session_id: source.id
+                })
+              });
+              if (sessRes.ok) {
+                const sessData = await sessRes.json() as any;
+                const messages = sessData.messages || [];
+                const content = messages
+                  .filter((m: any) => m.role === 'user')
+                  .map((m: any) => m.content)
+                  .join('\n');
+
+                memories.push({
+                  id: source.id,
+                  content: content,
+                  tags: source.tag ? [source.tag.pattern, source.tag.repo] : [],
+                  metadata: {
+                    tags: source.tag ? [source.tag.pattern, source.tag.repo] : [],
+                    pattern: source.tag?.pattern || 'unknown',
+                    repo: source.tag?.repo || 'unknown',
+                    prNumber: source.tag?.prNumber || 0,
+                    resolved: !!source.tag?.resolved,
+                    source: 'Sentinel',
+                    ts: source.updated_at ? new Date(source.updated_at).getTime() : Date.now()
+                  }
+                });
+              }
+            } catch (err) {
+              console.error(`Error fetching Parcle session details for ${source.id}:`, err);
+            }
+          }
+        }
+
+        return memories;
       } catch (err) {
         console.error('Parcle search connection error, falling back to D1:', err);
         return this.recallLocal(query, limit);
@@ -208,25 +296,72 @@ export class ParcleClient {
   async recallByRepo(repo: string, limit = 50): Promise<PatternMemory[]> {
     if (this.apiKey) {
       try {
-        const res = await fetch('https://api.parcle.ai/v1/memories/search', {
+        const userId = repo.split('/')[0] || 'sentinel_user';
+        const res = await fetch('https://api.parcle.ai/v1/memories/sources', {
           method: 'POST',
           headers: {
             'Authorization': `Bearer ${this.apiKey}`,
             'Content-Type': 'application/json'
           },
           body: JSON.stringify({
-            query: `repo:${repo}`,
+            user_id: userId,
+            tag_filter: { repo },
             limit
           })
         });
-        if (res.ok) {
-          const data = await res.json() as any;
-          return data.memories || [];
+        if (!res.ok) {
+          console.error(`Parcle recallByRepo API error: ${res.status} ${await res.text()}`);
+          return this.recallLocalByRepo(repo, limit);
         }
-        console.error(`Parcle search API error: ${res.status} ${await res.text()}`);
-        return this.recallLocalByRepo(repo, limit);
+        const data = await res.json() as any;
+        const sources = data.sources || [];
+        const memories: PatternMemory[] = [];
+
+        for (const source of sources) {
+          if (source.type === 'session') {
+            try {
+              const sessRes = await fetch('https://api.parcle.ai/v1/memories/sessions', {
+                method: 'POST',
+                headers: {
+                  'Authorization': `Bearer ${this.apiKey}`,
+                  'Content-Type': 'application/json'
+                },
+                body: JSON.stringify({
+                  user_id: userId,
+                  session_id: source.id
+                })
+              });
+              if (sessRes.ok) {
+                const sessData = await sessRes.json() as any;
+                const messages = sessData.messages || [];
+                const content = messages
+                  .filter((m: any) => m.role === 'user')
+                  .map((m: any) => m.content)
+                  .join('\n');
+
+                memories.push({
+                  id: source.id,
+                  content: content,
+                  tags: source.tag ? [source.tag.pattern, source.tag.repo] : [],
+                  metadata: {
+                    tags: source.tag ? [source.tag.pattern, source.tag.repo] : [],
+                    pattern: source.tag?.pattern || 'unknown',
+                    repo: source.tag?.repo || 'unknown',
+                    prNumber: source.tag?.prNumber || 0,
+                    resolved: !!source.tag?.resolved,
+                    source: 'Sentinel',
+                    ts: source.updated_at ? new Date(source.updated_at).getTime() : Date.now()
+                  }
+                });
+              }
+            } catch (err) {
+              console.error(`Error fetching Parcle session in recallByRepo ${source.id}:`, err);
+            }
+          }
+        }
+        return memories;
       } catch (err) {
-        console.error('Parcle search connection error, falling back to D1:', err);
+        console.error('Parcle search connection error in recallByRepo, falling back to D1:', err);
         return this.recallLocalByRepo(repo, limit);
       }
     } else {

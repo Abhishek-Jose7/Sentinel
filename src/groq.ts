@@ -34,7 +34,7 @@ export class GroqEngine {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = 'llama-3.3-70b-versatile') {
+  constructor(apiKey: string, model = 'llama-3.1-8b-instant') {
     this.apiKey = apiKey;
     this.model = model;
   }
@@ -176,9 +176,16 @@ Analyze the changes and output your JSON:`;
       return this.parseJSONContent(jsonText);
     } catch (err) {
       console.error('Groq analysis query failed:', err);
-      // Return a safe fallback schema instead of throwing, ensuring Sentinel is resilient
+      // Calculate deterministic fallback from hits starting from 100
+      const fallbackDims = { security: 100, reliability: 100, observability: 100, performance: 100, deployment: 100 };
+      for (const hit of hits) {
+        const dim = hit.dimension as keyof typeof fallbackDims;
+        if (fallbackDims[dim] !== undefined) {
+          fallbackDims[dim] = Math.max(0, fallbackDims[dim] - hit.penalty);
+        }
+      }
       return {
-        dimensions: { security: 80, reliability: 80, observability: 80, performance: 80, deployment: 80 },
+        dimensions: fallbackDims,
         risks: [
           {
             id: 'groq-analysis-failure',
@@ -274,11 +281,11 @@ Keep dimensions close to the deterministic scores. Only adjust by at most 5 poin
       console.error('Groq baseline analysis query failed:', err);
       return {
         dimensions: {
-          security: input.dimensions.security ?? 80,
-          reliability: input.dimensions.reliability ?? 80,
-          observability: input.dimensions.observability ?? 80,
-          performance: input.dimensions.performance ?? 80,
-          deployment: input.dimensions.deployment ?? 80
+          security: input.dimensions.security ?? 100,
+          reliability: input.dimensions.reliability ?? 100,
+          observability: input.dimensions.observability ?? 100,
+          performance: input.dimensions.performance ?? 100,
+          deployment: input.dimensions.deployment ?? 100
         },
         risks: input.hits.map(hit => ({
           id: hit.id,

@@ -1,54 +1,54 @@
 /* src/frontend/styles.css */
 
 :root {
-  /* Premium Dark SaaS Palette (Cosmic Dark / Electric Violet) */
-  --bg-darkest: #06070B;
-  --bg-darker: #0B0C12;
-  --bg-hud: #11131F;
-  --bg-card: rgba(17, 19, 32, 0.6);
-  --bg-terminal: #05060A;
+  /* Cyber Obsidian & Gold Theme Palette */
+  --bg-darkest: #07090E;      /* Midnight Obsidian Black */
+  --bg-darker: #0E121F;       /* Deep Slate Blue */
+  --bg-hud: #131828;          /* Tech Hud background */
+  --bg-card: rgba(19, 24, 40, 0.65); /* Glassmorphic card */
+  --bg-terminal: #07090F;     /* Pitch Black console */
   
-  --border-hud: rgba(255, 255, 255, 0.05);
-  --border-hover: rgba(124, 58, 237, 0.3);
-  --border-focus: rgba(124, 58, 237, 0.6);
+  --border-hud: rgba(16, 185, 129, 0.12); /* Glowing Mint border */
+  --border-hover: rgba(245, 158, 11, 0.35); /* Glowing Gold border on hover */
+  --border-focus: rgba(245, 158, 11, 0.7);
   
   /* Modern Primary & Accents */
-  --primary: #8B5CF6; /* Electric Violet */
-  --primary-hover: #A78BFA;
-  --primary-glow: rgba(124, 58, 237, 0.25);
-  --primary-bg: rgba(124, 58, 237, 0.06);
+  --primary: #10B981;        /* High-tech Emerald Green */
+  --primary-hover: #34D399;
+  --primary-glow: rgba(16, 185, 129, 0.25);
+  --primary-bg: rgba(16, 185, 129, 0.05);
   
-  --accent-pro: #EC4899; /* Sunset Pink */
-  --accent-pro-glow: rgba(236, 72, 153, 0.25);
-  --accent-pro-bg: rgba(236, 72, 153, 0.08);
+  --accent-pro: #F59E0B;      /* Cyber Gold / Amber */
+  --accent-pro-glow: rgba(245, 158, 11, 0.25);
+  --accent-pro-bg: rgba(245, 158, 11, 0.08);
   
   /* Semantic Status Indicators */
-  --success: #10B981; /* Mint Emerald */
-  --success-glow: rgba(16, 185, 129, 0.25);
-  --success-bg: rgba(16, 185, 129, 0.06);
+  --success: #059669;        /* Forest Green */
+  --success-glow: rgba(5, 150, 105, 0.25);
+  --success-bg: rgba(5, 150, 105, 0.06);
   
-  --warning: #F59E0B; /* Amber Gold */
-  --warning-glow: rgba(245, 158, 11, 0.25);
-  --warning-bg: rgba(245, 158, 11, 0.06);
+  --warning: #F97316;        /* Bright Alert Orange */
+  --warning-glow: rgba(249, 115, 22, 0.25);
+  --warning-bg: rgba(249, 115, 22, 0.06);
   
-  --error: #F43F5E; /* Coral Rose */
-  --error-glow: rgba(244, 63, 94, 0.3);
-  --error-bg: rgba(244, 63, 94, 0.08);
+  --error: #EF4444;          /* Crimson Red */
+  --error-glow: rgba(239, 68, 68, 0.3);
+  --error-bg: rgba(239, 68, 68, 0.08);
   
-  --info: #3B82F6; /* Sapphire Blue */
-  --info-bg: rgba(59, 130, 246, 0.08);
+  --info: #0EA5E9;           /* Cyber Sky Blue */
+  --info-bg: rgba(14, 165, 233, 0.08);
   
   /* Typography Colors */
-  --text-bright: #F8FAFC;
-  --text-normal: #94A3B8;
-  --text-muted: #64748B;
+  --text-bright: #F8FAFC;     /* Slate Bright */
+  --text-normal: #94A3B8;     /* Slate Medium */
+  --text-muted: #64748B;      /* Slate Muted */
   --text-dark: #334155;
   
   /* Corner Radii & Transitions */
-  --radius-lg: 14px;
+  --radius-lg: 16px;
   --radius-md: 10px;
   --radius-sm: 6px;
-  --t-smooth: 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+  --t-smooth: 0.28s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 /* Base resets & high-tech scanlines */
@@ -61,13 +61,13 @@
 body {
   background-color: var(--bg-darkest);
   background-image: 
-    radial-gradient(circle at 80% 20%, rgba(124, 58, 237, 0.06) 0%, transparent 60%),
-    radial-gradient(circle at 10% 80%, rgba(236, 72, 153, 0.04) 0%, transparent 50%),
-    linear-gradient(rgba(255, 255, 255, 0.002) 1px, transparent 1px),
-    linear-gradient(90deg, rgba(255, 255, 255, 0.002) 1px, transparent 1px);
-  background-size: 100% 100%, 100% 100%, 40px 40px, 40px 40px;
+    radial-gradient(circle at 85% 15%, rgba(16, 185, 129, 0.08) 0%, transparent 65%),
+    radial-gradient(circle at 15% 85%, rgba(245, 158, 11, 0.06) 0%, transparent 55%),
+    linear-gradient(rgba(16, 185, 129, 0.003) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(16, 185, 129, 0.003) 1px, transparent 1px);
+  background-size: 100% 100%, 100% 100%, 48px 48px, 48px 48px;
   color: var(--text-normal);
-  font-family: 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+  font-family: 'Plus Jakarta Sans', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   min-height: 100vh;
   overflow-x: hidden;
   line-height: 1.6;
@@ -91,10 +91,10 @@ body {
 }
 
 h1, h2, h3, h4, h5, h6 {
-  font-family: 'Outfit', sans-serif;
+  font-family: 'Space Grotesk', sans-serif;
   color: var(--text-bright);
   font-weight: 700;
-  letter-spacing: -0.01em;
+  letter-spacing: -0.02em;
 }
 
 /* App Layout Grid */

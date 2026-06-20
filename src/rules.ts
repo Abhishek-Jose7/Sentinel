@@ -185,11 +185,11 @@ export function runDeterministicChecks(input: RuleInput): RuleHit[] {
 
 export function scoreFromFacts(hits: RuleHit[]): Record<string, number> {
   const dimensions: Record<string, number> = {
-    security: 88,
-    reliability: 88,
-    observability: 88,
-    performance: 88,
-    deployment: 88
+    security: 100,
+    reliability: 100,
+    observability: 100,
+    performance: 100,
+    deployment: 100
   };
 
   for (const hit of hits) {

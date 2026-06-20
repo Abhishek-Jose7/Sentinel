@@ -87,6 +87,49 @@ export default {
         });
       }
 
+      // 1.15 Test Groq Endpoint
+      if (path === '/api/test-groq' && request.method === 'GET') {
+        const groqKey = env.GROQ_API_KEY;
+        if (!groqKey) {
+          return new Response(JSON.stringify({ error: 'GROQ_API_KEY is not defined in environment' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+        try {
+          const res = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${groqKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              model: 'llama-3.1-8b-instant',
+              messages: [
+                { role: 'user', content: 'Say "Groq Llama 3.1 8B Instant is successfully responding!"' }
+              ],
+              temperature: 0.1
+            })
+          });
+          const status = res.status;
+          const text = await res.text();
+          let parsed;
+          try {
+            parsed = JSON.parse(text);
+          } catch(e) {
+            parsed = text;
+          }
+          return new Response(JSON.stringify({ status, response: parsed }), {
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        } catch (e) {
+          return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+      }
+
       // 1.2 GitHub OAuth authentication
       if (path === '/api/auth/github' && request.method === 'POST') {
         const body = await request.json() as any;
@@ -194,12 +237,16 @@ export default {
                 if (reposRes.ok) {
                   const reposData = await reposRes.json() as any;
                   const instRepos = reposData.repositories || [];
+                  let newReposCount = 0;
                   for (const r of instRepos) {
                     allowedRepoIds.add(r.id);
                     const existing = await db.getRepo(r.owner.login, r.name);
                     await db.upsertRepo(r.id, r.owner.login, r.name);
                     if (!existing) {
-                      ctx.waitUntil(runRepositorySync(r.owner.login, r.name, env));
+                      newReposCount++;
+                      if (newReposCount === 1) {
+                        ctx.waitUntil(runRepositorySync(r.owner.login, r.name, env));
+                      }
                     }
                   }
                 }
@@ -842,11 +889,11 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
       console.error(`Groq baseline analysis query failed:`, e);
       baselineAnalysis = {
         dimensions: {
-          security: deterministicDimensions.security ?? 80,
-          reliability: deterministicDimensions.reliability ?? 80,
-          observability: deterministicDimensions.observability ?? 80,
-          performance: deterministicDimensions.performance ?? 80,
-          deployment: deterministicDimensions.deployment ?? 80
+          security: deterministicDimensions.security ?? 100,
+          reliability: deterministicDimensions.reliability ?? 100,
+          observability: deterministicDimensions.observability ?? 100,
+          performance: deterministicDimensions.performance ?? 100,
+          deployment: deterministicDimensions.deployment ?? 100
         },
         risks: hits.map(hit => ({
           id: hit.id,

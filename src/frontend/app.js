@@ -666,16 +666,27 @@ document.addEventListener('DOMContentLoaded', () => {
       const criticalCount = risks.filter(r => r.severity === 'critical').length;
       const warningCount = risks.filter(r => r.severity === 'warning').length;
       
-      let summaryText = `Sentinel evaluated these PR changes and calculated a posture score of <strong>${score}/100</strong>. `;
+      let displaySummary = `Sentinel evaluated these PR changes and calculated a posture score of <strong>${score}/100</strong>. `;
       if (criticalCount > 0) {
-        summaryText += `The reasoning engine predicted <strong>${criticalCount} critical risk(s)</strong> that could cause production instability. `;
+        displaySummary += `The reasoning engine predicted <strong>${criticalCount} critical risk(s)</strong> that could cause production instability. `;
       } else if (warningCount > 0) {
-        summaryText += `Sentinel identified <strong>${warningCount} warning(s)</strong> within the PR diff. `;
+        displaySummary += `Sentinel identified <strong>${warningCount} warning(s)</strong> within the PR diff. `;
       } else {
-        summaryText += `No significant risks were predicted in the code changes. `;
+        displaySummary += `No significant risks were predicted in the code changes. `;
       }
-      summaryText += `Verify the rule detections and annotations below.`;
+      displaySummary += `Verify the rule detections and annotations below.`;
       
+      let displayThought = pr.thought_process || "No detailed reasoning logs recorded for this scan. Deterministic verification was executed directly.";
+
+      if (pr.thought_process && pr.thought_process.startsWith('SUMMARY:')) {
+        const parts = pr.thought_process.split('\n\nTHOUGHT PROCESS:\n');
+        if (parts.length > 1) {
+          const summaryContent = parts[0].replace('SUMMARY:', '').trim();
+          displaySummary = `<div class="llm-summary-box" style="margin-bottom: 14px; font-weight: 500; font-size: 13.5px; color: var(--text-bright); line-height: 1.6; border-left: 3px solid var(--primary); padding-left: 12px; background: rgba(0, 255, 102, 0.02); padding-top: 6px; padding-bottom: 6px;">${escapeHtml(summaryContent)}</div>` + displaySummary;
+          displayThought = parts[1];
+        }
+      }
+
       // Dynamic Score Calculation Report
       const sec = pr.security_score !== undefined && pr.security_score !== null ? pr.security_score : '--';
       const rel = pr.reliability_score !== undefined && pr.reliability_score !== null ? pr.reliability_score : '--';
@@ -699,11 +710,11 @@ document.addEventListener('DOMContentLoaded', () => {
       }
       scoreExplanation += `</div>`;
 
-      el.analysisSummary.innerHTML = summaryText + scoreExplanation;
+      el.analysisSummary.innerHTML = displaySummary + scoreExplanation;
       
       // Update thought process text
       if (el.thoughtProcessText) {
-        el.thoughtProcessText.textContent = pr.thought_process || "No detailed reasoning logs recorded for this scan. Deterministic verification was executed directly.";
+        el.thoughtProcessText.textContent = displayThought;
       }
     }
 

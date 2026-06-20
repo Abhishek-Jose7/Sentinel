@@ -336,32 +336,7 @@ export default {
         }
 
         const repos = await db.listRepos();
-        const accessMap = new Map<number, boolean>();
-
-        await Promise.all(repos.map(async (r) => {
-          if (allowedRepoIds.has(r.id)) {
-            accessMap.set(r.id, true);
-            return;
-          }
-
-          // Direct check for private or organization repos registered in D1 that weren't auto-discovered
-          try {
-            const checkRes = await fetch(`https://api.github.com/repos/${r.owner}/${r.name}`, {
-              headers: {
-                'Authorization': `token ${session.accessToken}`,
-                'Accept': 'application/vnd.github.v3+json',
-                'User-Agent': 'Sentinel-App'
-              }
-            });
-            if (checkRes.ok) {
-              accessMap.set(r.id, true);
-            }
-          } catch (e) {
-            console.error(`Error checking direct access for repo ${r.owner}/${r.name}:`, e);
-          }
-        }));
-
-        const filteredRepos = repos.filter(r => accessMap.get(r.id) === true);
+        const filteredRepos = repos.filter(r => allowedRepoIds.has(r.id));
 
         return new Response(JSON.stringify(filteredRepos), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }
@@ -759,7 +734,7 @@ async function runAuditLoop(payload: any, env: Env) {
       observability_score: dimensions.observability,
       performance_score: dimensions.performance,
       deployment_score: dimensions.deployment,
-      thought_process: analysis.thought_process || null
+      thought_process: analysis.summary ? `SUMMARY: ${analysis.summary}\n\nTHOUGHT PROCESS:\n${analysis.thought_process || ''}` : (analysis.thought_process || null)
     });
 
     await db.clearPRRuleHits(prId);
@@ -956,8 +931,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     const fallbackDimensions = { security: 100, reliability: 100, observability: 100, performance: 100, deployment: 100 };
     const overallScore = calculateOverallScore(deterministicDimensions);
 
-    // Update repository current score
-    await db.updateRepoScore(repoId, overallScore);
+    // Removed premature repository score update to prevent showing 100/100 or incomplete scores during scans.
     console.log(`Baseline score for ${repoFullName} computed: ${overallScore}`);
 
     // Save Baseline PR #0 Scan record in D1 so the dashboard is immediately populated
@@ -1015,7 +989,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       observability_score: baselineClamped.dimensions.observability,
       performance_score: baselineClamped.dimensions.performance,
       deployment_score: baselineClamped.dimensions.deployment,
-      thought_process: baselineAnalysis.thought_process || null
+      thought_process: baselineAnalysis.summary ? `SUMMARY: ${baselineAnalysis.summary}\n\nTHOUGHT PROCESS:\n${baselineAnalysis.thought_process || ''}` : (baselineAnalysis.thought_process || null)
     });
 
     // Insert baseline rule hits
@@ -1071,10 +1045,10 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       console.error(`Failed to create baseline report issue:`, issueErr);
     }
 
-    // Fetch recent commits and backfill them as commit scans in D1
+        // Fetch recent commits and backfill them as commit scans in D1 (limit to 10 commits)
     try {
       console.log(`Fetching recent commits for ${repoFullName} to populate commit scan history...`);
-      const commits = await github.getRecentCommits(token, owner, repo, 30);
+      const commits = await github.getRecentCommits(token, owner, repo, 10);
       console.log(`Found ${commits.length} commits to backfill.`);
 
       for (let i = 0; i < commits.length; i++) {
@@ -1101,12 +1075,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
           });
           const diff = diffRes.ok ? await diffRes.text() : '';
 
-          // Fetch priority files at commit ref
-          const commitFiles = await github.fetchPriorityFiles(token, owner, repo, sha, PRIORITY_PATTERNS);
-
-          // Run checks
-          const commitHits = runDeterministicChecks({ files: commitFiles, diff });
-          const commitFacts = extractRepositoryFacts(commitFiles);
+          // Run checks using loaded baseline files + commit diff to minimize subrequests
+          const commitHits = runDeterministicChecks({ files, diff });
 
           // Skip Groq analysis for historical backfilled commits to avoid API limits (12k TPM)
           const commitDimensions = scoreFromFacts(commitHits);
@@ -1183,9 +1153,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     } catch (commitsErr) {
       console.error(`Failed to fetch recent commits:`, commitsErr);
     }
-
-    // 4. Fetch last 5 pull requests (closed, merged, or open)
-    const pastPRs = await github.getPastPullRequests(token, owner, repo, 5);
+    // Fetch last 3 pull requests (closed, merged, or open) to fit within Cloudflare's subrequests limit safely
+    const pastPRs = await github.getPastPullRequests(token, owner, repo, 3);
     console.log(`Found ${pastPRs.length} past pull requests to backfill.`);
 
     for (const pr of pastPRs) {
@@ -1203,12 +1172,8 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
         // Fetch PR diff
         const diff = await github.getPRDiff(token, owner, repo, prNumber);
 
-        // Fetch Priority Files at PR HEAD
-        const prFiles = await github.fetchPriorityFiles(token, owner, repo, headSha, PRIORITY_PATTERNS);
-
-        // Run Deterministic checks
-        const prHits = runDeterministicChecks({ files: prFiles, diff });
-        const prFacts = extractRepositoryFacts(prFiles);
+        // Run Deterministic checks using loaded baseline files + PR diff to minimize subrequests
+        const prHits = runDeterministicChecks({ files, diff });
 
         // Memory Recall loop
         const patternMatches = await Promise.all(
@@ -1295,6 +1260,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       }
     }
 
+    await db.updateRepoScore(repoId, baselineOverallScore);
     await db.updateRepoScanStatus(repoId, 'completed', 'Scan completed successfully.');
     const duration = Date.now() - startTime;
     console.log(`Repository sync for ${repoFullName} completed successfully. Sync Metrics: Scanned Files: ${facts.scannedFileCount}, Rule Hits: ${hits.length}, Memories Recalled: ${baselineMemories.length}, Duration: ${duration}ms`);

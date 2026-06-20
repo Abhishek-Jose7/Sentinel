@@ -204,4 +204,62 @@ export class ParcleClient {
     }
     return memories.filter(memory => Number(memory.metadata?.prNumber) !== excludePrNumber);
   }
+
+  async recallByRepo(repo: string, limit = 50): Promise<PatternMemory[]> {
+    if (this.apiKey) {
+      try {
+        const res = await fetch('https://api.parcle.ai/v1/memories/search', {
+          method: 'POST',
+          headers: {
+            'Authorization': `Bearer ${this.apiKey}`,
+            'Content-Type': 'application/json'
+          },
+          body: JSON.stringify({
+            query: `repo:${repo}`,
+            limit
+          })
+        });
+        if (res.ok) {
+          const data = await res.json() as any;
+          return data.memories || [];
+        }
+        console.error(`Parcle search API error: ${res.status} ${await res.text()}`);
+        return this.recallLocalByRepo(repo, limit);
+      } catch (err) {
+        console.error('Parcle search connection error, falling back to D1:', err);
+        return this.recallLocalByRepo(repo, limit);
+      }
+    } else {
+      return this.recallLocalByRepo(repo, limit);
+    }
+  }
+
+  private async recallLocalByRepo(repo: string, limit = 50): Promise<PatternMemory[]> {
+    if (!this.db) return [];
+    try {
+      const results = await this.db.prepare(
+        `SELECT * FROM local_memories 
+         WHERE repo_name = ? 
+         ORDER BY created_at DESC LIMIT ?`
+      ).bind(repo, limit).all();
+      const rows = results.results || [];
+      return rows.map((r: any) => ({
+        id: r.id,
+        content: r.content,
+        tags: JSON.parse(r.tags),
+        metadata: {
+          tags: JSON.parse(r.tags),
+          pattern: r.pattern_id,
+          repo: r.repo_name,
+          prNumber: r.pr_number,
+          resolved: !!r.resolved,
+          source: 'Sentinel',
+          ts: new Date(r.created_at + 'Z').getTime()
+        }
+      }));
+    } catch (err) {
+      console.error('Error recalling local memories by repo:', err);
+      return [];
+    }
+  }
 }

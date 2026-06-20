@@ -1,5 +1,4 @@
-// src/index.ts
-
+import jwt from '@tsndr/cloudflare-worker-jwt';
 import { DbHelper } from './db';
 import { runDeterministicChecks, applyPenalties } from './rules';
 import { ParcleClient } from './parcle';
@@ -13,6 +12,32 @@ export interface Env {
   GITHUB_APP_ID?: string;
   GITHUB_PRIVATE_KEY?: string; // PEM format
   GITHUB_WEBHOOK_SECRET?: string;
+  GITHUB_CLIENT_ID?: string;
+  GITHUB_CLIENT_SECRET?: string;
+  JWT_SECRET?: string;
+}
+
+interface UserSession {
+  login: string;
+  id: number;
+  accessToken: string;
+}
+
+async function getUserSession(request: Request, env: Env): Promise<UserSession | null> {
+  const authHeader = request.headers.get('Authorization');
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  const token = authHeader.substring(7);
+  const jwtSecret = env.JWT_SECRET || 'sentinel-jwt-secret-fallback';
+  try {
+    const isValid = await jwt.verify(token, jwtSecret);
+    if (!isValid) return null;
+    const decoded = jwt.decode(token);
+    return decoded.payload as UserSession;
+  } catch (e) {
+    return null;
+  }
 }
 
 const PRIORITY_PATTERNS = [
@@ -55,11 +80,115 @@ export default {
       }
 
       const db = new DbHelper(env.DB);
+      // 1.1 Config Endpoint
+      if (path === '/api/config' && request.method === 'GET') {
+        return new Response(JSON.stringify({ client_id: env.GITHUB_CLIENT_ID }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+        });
+      }
+
+      // 1.2 GitHub OAuth authentication
+      if (path === '/api/auth/github' && request.method === 'POST') {
+        const body = await request.json() as any;
+        const { code } = body;
+        if (!code) {
+          return new Response(JSON.stringify({ error: 'Missing code' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        // Exchange code for user access token
+        const tokenRes = await fetch('https://github.com/login/oauth/access_token', {
+          method: 'POST',
+          headers: {
+            'Accept': 'application/json',
+            'Content-Type': 'application/json',
+            'User-Agent': 'Sentinel-App'
+          },
+          body: JSON.stringify({
+            client_id: env.GITHUB_CLIENT_ID,
+            client_secret: env.GITHUB_CLIENT_SECRET,
+            code
+          })
+        });
+
+        const tokenData = await tokenRes.json() as any;
+        const accessToken = tokenData.access_token;
+        if (!accessToken) {
+          return new Response(JSON.stringify({ error: tokenData.error_description || 'OAuth token exchange failed' }), {
+            status: 400,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        // Fetch user info from GitHub
+        const userRes = await fetch('https://api.github.com/user', {
+          headers: {
+            'Authorization': `token ${accessToken}`,
+            'User-Agent': 'Sentinel-App'
+          }
+        });
+
+        if (!userRes.ok) {
+          return new Response(JSON.stringify({ error: 'Failed to fetch user profile' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        const userData = await userRes.json() as any;
+        const login = userData.login;
+        const id = userData.id;
+        const avatarUrl = userData.avatar_url;
+
+        // Sign user session JWT
+        const jwtSecret = env.JWT_SECRET || 'sentinel-jwt-secret-fallback';
+        const jwtToken = await jwt.sign({
+          login,
+          id,
+          accessToken,
+          exp: Math.floor(Date.now() / 1000) + 7 * 24 * 60 * 60 // 7 days
+        }, jwtSecret, { algorithm: 'HS256' });
+
+        return new Response(JSON.stringify({ token: jwtToken, user: { login, avatar_url: avatarUrl } }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+        });
+      }
 
       // 2. API: List Repositories
       if (path === '/api/repos' && request.method === 'GET') {
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
         const repos = await db.listRepos();
-        return new Response(JSON.stringify(repos), {
+
+        // Query GitHub API for user's repos to verify permissions
+        const ghReposRes = await fetch('https://api.github.com/user/repos?per_page=100', {
+          headers: {
+            'Authorization': `token ${session.accessToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Sentinel-App'
+          }
+        });
+
+        if (!ghReposRes.ok) {
+          return new Response(JSON.stringify({ error: 'Failed to fetch repository access permissions from GitHub' }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        const ghRepos = await ghReposRes.json() as any[];
+        const allowedRepoIds = new Set(ghRepos.map(r => r.id));
+        const filteredRepos = repos.filter(r => allowedRepoIds.has(r.id));
+
+        return new Response(JSON.stringify(filteredRepos), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }
         });
       }
@@ -69,6 +198,31 @@ export default {
       if (repoMatch && request.method === 'GET') {
         const owner = repoMatch[1];
         const name = repoMatch[2];
+
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        // Validate repository access on GitHub
+        const accessRes = await fetch(`https://api.github.com/repos/${owner}/${name}`, {
+          headers: {
+            'Authorization': `token ${session.accessToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Sentinel-App'
+          }
+        });
+
+        if (!accessRes.ok) {
+          return new Response(JSON.stringify({ error: 'Forbidden: You do not have access to this repository on GitHub' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
         const repo = await db.getRepo(owner, name);
         if (!repo) {
           return new Response(JSON.stringify({ error: 'Repository not found' }), {
@@ -82,12 +236,37 @@ export default {
         });
       }
 
-      // 4. API: PR scan details
-      const prMatch = path.match(/^\/api\/repos\/([^\/]+)\/([^\/]+)\/pr\/(\d+)$/);
+      // 4. API: PR/Commit scan details
+      const prMatch = path.match(/^\/api\/repos\/([^\/]+)\/([^\/]+)\/pr\/(-?\d+)$/);
       if (prMatch && request.method === 'GET') {
         const owner = prMatch[1];
         const name = prMatch[2];
         const prNumber = parseInt(prMatch[3]);
+
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        // Validate repository access on GitHub
+        const accessRes = await fetch(`https://api.github.com/repos/${owner}/${name}`, {
+          headers: {
+            'Authorization': `token ${session.accessToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Sentinel-App'
+          }
+        });
+
+        if (!accessRes.ok) {
+          return new Response(JSON.stringify({ error: 'Forbidden: You do not have access to this repository on GitHub' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
         const repo = await db.getRepo(owner, name);
         if (!repo) {
           return new Response(JSON.stringify({ error: 'Repository not found' }), {
@@ -123,8 +302,54 @@ export default {
         });
       }
 
+      // 4.1 API: Get repository Parcle memories
+      const memoriesMatch = path.match(/^\/api\/repos\/([^\/]+)\/([^\/]+)\/memories$/);
+      if (memoriesMatch && request.method === 'GET') {
+        const owner = memoriesMatch[1];
+        const name = memoriesMatch[2];
+
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        // Validate repository access on GitHub
+        const accessRes = await fetch(`https://api.github.com/repos/${owner}/${name}`, {
+          headers: {
+            'Authorization': `token ${session.accessToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Sentinel-App'
+          }
+        });
+
+        if (!accessRes.ok) {
+          return new Response(JSON.stringify({ error: 'Forbidden: You do not have access to this repository on GitHub' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        const parcle = new ParcleClient(env.PARCLE_API_KEY || null, env.DB);
+        const memories = await parcle.recallByRepo(`${owner}/${name}`, 50);
+
+        return new Response(JSON.stringify({ memories }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+        });
+      }
+
       // 5. API: Activate Enter Pro
       if (path === '/api/pro/activate' && request.method === 'POST') {
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
         const body = await request.json() as any;
         const { owner, repo, licenseKey } = body;
         if (!owner || !repo || !licenseKey) {
@@ -133,6 +358,23 @@ export default {
             headers: { 'Content-Type': 'application/json', ...corsHeaders() }
           });
         }
+
+        // Validate repository access on GitHub
+        const accessRes = await fetch(`https://api.github.com/repos/${owner}/${repo}`, {
+          headers: {
+            'Authorization': `token ${session.accessToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Sentinel-App'
+          }
+        });
+
+        if (!accessRes.ok) {
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
         const success = await db.activatePro(owner, repo, licenseKey);
         if (success) {
           return new Response(JSON.stringify({ message: 'Sentinel Pro Activated successfully' }), {
@@ -146,17 +388,41 @@ export default {
         }
       }
 
-      // 5.1 API: Sync Repository (Baseline + PR History Backfill)
+      // 5.1 API: Sync/Scan Repository (Baseline + Commit Scans + Past PRs Backfill)
       const syncMatch = path.match(/^\/api\/repos\/([^\/]+)\/([^\/]+)\/sync$/);
       if (syncMatch && request.method === 'POST') {
         const owner = syncMatch[1];
         const name = syncMatch[2];
+
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        // Validate repository access on GitHub
+        const accessRes = await fetch(`https://api.github.com/repos/${owner}/${name}`, {
+          headers: {
+            'Authorization': `token ${session.accessToken}`,
+            'Accept': 'application/vnd.github.v3+json',
+            'User-Agent': 'Sentinel-App'
+          }
+        });
+
+        if (!accessRes.ok) {
+          return new Response(JSON.stringify({ error: 'Forbidden' }), {
+            status: 403,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
         ctx.waitUntil(runRepositorySync(owner, name, env));
-        return new Response(JSON.stringify({ message: 'Sync queued successfully' }), {
+        return new Response(JSON.stringify({ message: 'Scan queued successfully' }), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }
         });
       }
-
       // 6. Serve Enter Pro Dashboard Frontend
       if (path === '/' || path === '/dashboard' || path === '/index.html') {
         const html = await fetchDashboardHtml(env);
@@ -484,6 +750,217 @@ async function runRepositorySync(owner: string, repo: string, env: Env) {
     // Update repository current score
     await db.updateRepoScore(repoId, overallScore);
     console.log(`Baseline score for ${repoFullName} computed: ${overallScore}`);
+
+    // Save Baseline PR #0 Scan record in D1 so the dashboard is immediately populated
+    const baselinePrId = `${repoFullName}/pull/0`;
+    
+    // Query Groq for baseline analysis of priority files (without a PR diff)
+    let baselineAnalysis;
+    try {
+      baselineAnalysis = await groq.analyzePR(
+        repoFullName,
+        0,
+        `Baseline Posture Scan (${defaultBranch})`,
+        '', // No diff
+        files,
+        [] // No memories
+      );
+    } catch (e) {
+      console.error(`Groq baseline analysis query failed:`, e);
+      baselineAnalysis = {
+        dimensions: initialLLM,
+        risks: [],
+        summary: 'Baseline posture scan computed deterministic rules checks.'
+      };
+    }
+
+    const baselineClamped = applyPenalties(baselineAnalysis.dimensions, hits);
+    const baselineOverallScore = Math.round(
+      (baselineClamped.dimensions.security * 0.30) +
+      (baselineClamped.dimensions.reliability * 0.25) +
+      (baselineClamped.dimensions.observability * 0.15) +
+      (baselineClamped.dimensions.performance * 0.15) +
+      (baselineClamped.dimensions.deployment * 0.15)
+    );
+
+    await db.upsertPR({
+      id: baselinePrId,
+      repo_id: repoId,
+      pr_number: 0,
+      title: `Baseline Posture Scan (${defaultBranch})`,
+      state: 'merged',
+      overall_score: baselineOverallScore,
+      security_score: baselineClamped.dimensions.security,
+      reliability_score: baselineClamped.dimensions.reliability,
+      observability_score: baselineClamped.dimensions.observability,
+      performance_score: baselineClamped.dimensions.performance,
+      deployment_score: baselineClamped.dimensions.deployment
+    });
+
+    // Insert baseline rule hits
+    await db.clearPRRuleHits(baselinePrId);
+    for (const hit of hits) {
+      await db.insertRuleHit({
+        id: `${baselinePrId}:${hit.id}`,
+        pr_id: baselinePrId,
+        rule_id: hit.id,
+        dimension: hit.dimension,
+        penalty: hit.penalty,
+        title: hit.title,
+        description: hit.description
+      });
+    }
+
+    // Insert baseline risks
+    await db.clearPRRisks(baselinePrId);
+    for (const risk of baselineAnalysis.risks) {
+      await db.insertRisk({
+        id: `${baselinePrId}:${crypto.randomUUID()}`,
+        pr_id: baselinePrId,
+        pattern_id: risk.id,
+        title: risk.title,
+        location: risk.location,
+        why: risk.why,
+        severity: risk.severity
+      });
+    }
+
+    // Post the Baseline Report as a GitHub Issue in the repository (Option A)
+    try {
+      await github.createBaselineReportIssue(
+        token,
+        owner,
+        repo,
+        baselineOverallScore,
+        hits,
+        baselineAnalysis.risks,
+        baselineAnalysis.summary
+      );
+      console.log(`Baseline report issue created in GitHub for ${repoFullName}`);
+    } catch (issueErr) {
+      console.error(`Failed to create baseline report issue:`, issueErr);
+    }
+
+    // Fetch recent commits and backfill them as commit scans in D1
+    try {
+      console.log(`Fetching recent commits for ${repoFullName} to populate commit scan history...`);
+      const commits = await github.getRecentCommits(token, owner, repo, 30);
+      console.log(`Found ${commits.length} commits to backfill.`);
+
+      for (let i = 0; i < commits.length; i++) {
+        const commitObj = commits[i];
+        const sha = commitObj.sha;
+        const shortSha = sha.substring(0, 7);
+        const commitMessage = commitObj.commit.message.split('\n')[0];
+        const commitPrNumber = -(i + 1); // -1, -2, -3, -4, -5
+        const commitPrId = `${repoFullName}/pull/${commitPrNumber}`;
+        const commitPrTitle = `Commit [${shortSha}]: ${commitMessage}`;
+
+        console.log(`Backfilling commit scan ${shortSha} ("${commitMessage}")...`);
+
+        try {
+          // Fetch commit diff
+          const diffRes = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits/${sha}`, {
+            headers: {
+              'Authorization': `token ${token}`,
+              'Accept': 'application/vnd.github.v3.diff',
+              'User-Agent': 'Sentinel-App'
+            }
+          });
+          const diff = diffRes.ok ? await diffRes.text() : '';
+
+          // Fetch priority files at commit ref
+          const commitFiles = await github.fetchPriorityFiles(token, owner, repo, sha, PRIORITY_PATTERNS);
+
+          // Run checks
+          const commitHits = runDeterministicChecks({ files: commitFiles, diff });
+
+          // Groq analysis
+          let commitAnalysis;
+          try {
+            commitAnalysis = await groq.analyzePR(
+              repoFullName,
+              commitPrNumber,
+              commitPrTitle,
+              diff,
+              commitFiles,
+              []
+            );
+          } catch (e) {
+            commitAnalysis = {
+              dimensions: initialLLM,
+              risks: [],
+              summary: 'Commit scan completed deterministic checks.'
+            };
+          }
+
+          const commitClamped = applyPenalties(commitAnalysis.dimensions, commitHits);
+          const commitOverallScore = Math.round(
+            (commitClamped.dimensions.security * 0.30) +
+            (commitClamped.dimensions.reliability * 0.25) +
+            (commitClamped.dimensions.observability * 0.15) +
+            (commitClamped.dimensions.performance * 0.15) +
+            (commitClamped.dimensions.deployment * 0.15)
+          );
+
+          await db.upsertPR({
+            id: commitPrId,
+            repo_id: repoId,
+            pr_number: commitPrNumber,
+            title: commitPrTitle,
+            state: 'merged',
+            overall_score: commitOverallScore,
+            security_score: commitClamped.dimensions.security,
+            reliability_score: commitClamped.dimensions.reliability,
+            observability_score: commitClamped.dimensions.observability,
+            performance_score: commitClamped.dimensions.performance,
+            deployment_score: commitClamped.dimensions.deployment
+          });
+
+          // Insert rule hits
+          await db.clearPRRuleHits(commitPrId);
+          for (const hit of commitHits) {
+            await db.insertRuleHit({
+              id: `${commitPrId}:${hit.id}`,
+              pr_id: commitPrId,
+              rule_id: hit.id,
+              dimension: hit.dimension,
+              penalty: hit.penalty,
+              title: hit.title,
+              description: hit.description
+            });
+          }
+
+          // Insert risks
+          await db.clearPRRisks(commitPrId);
+          for (const risk of commitAnalysis.risks) {
+            await db.insertRisk({
+              id: `${commitPrId}:${crypto.randomUUID()}`,
+              pr_id: commitPrId,
+              pattern_id: risk.id,
+              title: risk.title,
+              location: risk.location,
+              why: risk.why,
+              severity: risk.severity
+            });
+          }
+
+          // Learn patterns from commits
+          for (const risk of commitAnalysis.risks) {
+            await parcle.storePattern(
+              `[Commit ${shortSha}] Detected ${risk.severity} risk: "${risk.title}" in ${risk.location}. ${risk.why}`,
+              risk.id,
+              repoFullName,
+              { prNumber: commitPrNumber, tags: [risk.severity] }
+            );
+          }
+        } catch (commitErr) {
+          console.error(`Failed to backfill commit ${shortSha}:`, commitErr);
+        }
+      }
+    } catch (commitsErr) {
+      console.error(`Failed to fetch recent commits:`, commitsErr);
+    }
 
     // 4. Fetch last 5 pull requests (closed, merged, or open)
     const pastPRs = await github.getPastPullRequests(token, owner, repo, 5);

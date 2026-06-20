@@ -292,6 +292,15 @@ async function runTests() {
     console.error('❌ Test 3 Failed: Stored memory was not recalled.');
   }
 
+  // Recall all memories for the repo
+  const repoMemories = await parcle.recallByRepo('acme/storefront', 10);
+  console.log('Recalled repo memories count:', repoMemories.length);
+  if (repoMemories.length === 1 && repoMemories[0].metadata?.repo === 'acme/storefront') {
+    console.log('✅ Test 3.5 Passed: recallByRepo successfully retrieved all repo memories!');
+  } else {
+    console.error('❌ Test 3.5 Failed: recallByRepo did not retrieve the repository memories.');
+  }
+
   // Test 4: Format Markdown Section
   console.log('\n--- Test 4: PR Comment Markdown Formatter ---');
   const matchedHistory = [

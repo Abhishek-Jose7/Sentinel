@@ -37,7 +37,15 @@ document.addEventListener('DOMContentLoaded', () => {
     emptySyncForm: document.getElementById('empty-sync-form'),
     syncOwnerInput: document.getElementById('sync-owner'),
     syncRepoInput: document.getElementById('sync-repo'),
-    btnEmptySync: document.getElementById('btn-empty-sync')
+    btnEmptySync: document.getElementById('btn-empty-sync'),
+    loginOverlay: document.getElementById('login-overlay'),
+    btnGithubLogin: document.getElementById('btn-github-login'),
+    userBadgeContainer: document.getElementById('user-badge-container'),
+    userAvatar: document.getElementById('user-avatar'),
+    userName: document.getElementById('user-name'),
+    userRole: document.getElementById('user-role'),
+    repoMemoriesList: document.getElementById('repo-memories-list'),
+    repoMemoryCountBadge: document.getElementById('repo-memory-count-badge')
   };
 
   // 1. Initial Load
@@ -59,13 +67,118 @@ document.addEventListener('DOMContentLoaded', () => {
     return Math.max(0, Math.min(100, numeric));
   }
 
-  function init() {
+  function getJwt() {
+    return localStorage.getItem('sentinel_jwt');
+  }
+
+  async function authFetch(url, options = {}) {
+    const token = getJwt();
+    if (token) {
+      options.headers = {
+        ...options.headers,
+        'Authorization': `Bearer ${token}`
+      };
+    }
+    const res = await fetch(url, options);
+    if (res.status === 401) {
+      signOut();
+    }
+    return res;
+  }
+
+  function showDashboard() {
+    el.loginOverlay.style.display = 'none';
+    const userStr = localStorage.getItem('sentinel_user');
+    if (userStr) {
+      const user = JSON.parse(userStr);
+      el.userName.textContent = user.login;
+      el.userRole.textContent = 'GitHub Session';
+      if (user.avatar_url) {
+        el.userAvatar.innerHTML = `<img src="${user.avatar_url}" style="width: 100%; height: 100%; border-radius: 50%; object-fit: cover;" />`;
+      }
+    }
     loadRepositories();
+  }
+
+  function showLoginOverlay() {
+    el.loginOverlay.style.display = 'flex';
+    el.dashboardView.style.display = 'none';
+    el.emptyView.style.display = 'none';
+  }
+
+  function signOut() {
+    localStorage.removeItem('sentinel_jwt');
+    localStorage.removeItem('sentinel_user');
+    showLoginOverlay();
+  }
+
+  // 1. Initial Load
+  async function init() {
+    const params = new URLSearchParams(window.location.search);
+    const code = params.get('code');
+    
+    if (code) {
+      el.loginOverlay.style.display = 'flex';
+      const btn = el.btnGithubLogin;
+      btn.disabled = true;
+      btn.innerHTML = '🔄 Authenticating...';
+      
+      try {
+        const res = await fetch('/api/auth/github', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ code })
+        });
+        const data = await res.json();
+        if (res.ok) {
+          localStorage.setItem('sentinel_jwt', data.token);
+          localStorage.setItem('sentinel_user', JSON.stringify(data.user));
+          window.history.replaceState({}, document.title, window.location.pathname);
+          showDashboard();
+        } else {
+          alert(`Authentication failed: ${data.error || 'Unknown error'}`);
+          signOut();
+        }
+      } catch (err) {
+        alert('Failed to connect to authentication server.');
+        signOut();
+      }
+    } else {
+      const jwtToken = getJwt();
+      if (jwtToken) {
+        showDashboard();
+      } else {
+        showLoginOverlay();
+      }
+    }
+    
     setupEventListeners();
   }
 
   // 2. Event Listeners Setup
   function setupEventListeners() {
+    // GitHub Login Click
+    el.btnGithubLogin.addEventListener('click', async () => {
+      try {
+        const res = await fetch('/api/config');
+        const config = await res.json();
+        if (config.client_id) {
+          window.location.href = `https://github.com/login/oauth/authorize?client_id=${config.client_id}&scope=repo,read:org`;
+        } else {
+          alert('GitHub Client ID is not configured on backend.');
+        }
+      } catch (e) {
+        alert('Failed to fetch authentication config.');
+      }
+    });
+
+    // User badge Click (Sign out)
+    el.userBadgeContainer.addEventListener('click', () => {
+      if (confirm('Are you sure you want to sign out?')) {
+        signOut();
+      }
+    });
+
     // Open/Close Activation Modal
     el.btnActivateModal.addEventListener('click', () => {
       el.formError.textContent = '';
@@ -91,7 +204,7 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!state.selectedRepo) return;
 
       try {
-        const res = await fetch('/api/pro/activate', {
+        const res = await authFetch('/api/pro/activate', {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({
@@ -119,12 +232,10 @@ document.addEventListener('DOMContentLoaded', () => {
     // PR Select Change
     el.prSelect.addEventListener('change', (e) => {
       const prNumber = parseInt(e.target.value);
-      if (prNumber) {
-        loadPRScan(state.selectedRepo.owner, state.selectedRepo.name, prNumber);
-      }
+      loadPRScan(state.selectedRepo.owner, state.selectedRepo.name, prNumber);
     });
 
-    // Sync Repository
+    // Scan Repository button
     if (el.btnSyncRepo) {
       el.btnSyncRepo.addEventListener('click', async () => {
         if (!state.selectedRepo) return;
@@ -132,23 +243,23 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalText = btn.innerHTML;
         
         btn.disabled = true;
-        btn.innerHTML = '🔄 Syncing...';
+        btn.innerHTML = '🔍 Scanning...';
         
         try {
-          const res = await fetch(`/api/repos/${state.selectedRepo.owner}/${state.selectedRepo.name}/sync`, {
+          const res = await authFetch(`/api/repos/${state.selectedRepo.owner}/${state.selectedRepo.name}/sync`, {
             method: 'POST'
           });
           const data = await res.json();
           if (res.ok) {
-            alert('Repository sync queued successfully. Previous commits/scans will backfill in the background. Dashboard will reload in 5 seconds.');
+            alert('Scan queued successfully. Repository baseline and commits are analyzing in the background. Dashboard will reload in 5 seconds.');
             setTimeout(() => {
               loadRepository(state.selectedRepo.owner, state.selectedRepo.name);
             }, 5000);
           } else {
-            alert(`Sync failed: ${data.error || 'Unknown error'}`);
+            alert(`Scan failed: ${data.error || 'Unknown error'}`);
           }
         } catch (err) {
-          alert('Failed to connect to sync endpoint.');
+          alert('Failed to connect to scan endpoint.');
         } finally {
           btn.disabled = false;
           btn.innerHTML = originalText;
@@ -168,15 +279,15 @@ document.addEventListener('DOMContentLoaded', () => {
         const originalText = btn.innerHTML;
         
         btn.disabled = true;
-        btn.innerHTML = '🔄 Syncing...';
+        btn.innerHTML = '🔍 Scanning...';
 
         try {
-          const res = await fetch(`/api/repos/${owner}/${repo}/sync`, {
+          const res = await authFetch(`/api/repos/${owner}/${repo}/sync`, {
             method: 'POST'
           });
           const data = await res.json();
           if (res.ok) {
-            alert('Repository import and scan queued successfully. Old PRs are backfilling in the background. The dashboard will load in 5 seconds.');
+            alert('Repository import and scan queued successfully. Baseline scan and commits will backfill in the background. The dashboard will load in 5 seconds.');
             setTimeout(async () => {
               await loadRepositories();
             }, 5000);
@@ -184,7 +295,7 @@ document.addEventListener('DOMContentLoaded', () => {
             alert(`Import failed: ${data.error || 'Unknown error'}`);
           }
         } catch (err) {
-          alert('Failed to connect to sync endpoint.');
+          alert('Failed to connect to scan endpoint.');
         } finally {
           btn.disabled = false;
           btn.innerHTML = originalText;
@@ -196,7 +307,7 @@ document.addEventListener('DOMContentLoaded', () => {
   // 3. API Loaders
   async function loadRepositories(activeId = null) {
     try {
-      const res = await fetch('/api/repos');
+      const res = await authFetch('/api/repos');
       if (!res.ok) throw new Error('API fetch failed');
       const data = await res.json();
       state.repositories = data;
@@ -216,7 +327,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
   async function loadRepository(owner, name) {
     try {
-      const res = await fetch(`/api/repos/${owner}/${name}`);
+      const res = await authFetch(`/api/repos/${owner}/${name}`);
       if (!res.ok) throw new Error('API fetch failed');
       const data = await res.json();
       
@@ -226,6 +337,7 @@ document.addEventListener('DOMContentLoaded', () => {
 
       updateDashboardHeader();
       populatePRSelector();
+      loadRepoMemories(owner, name);
 
       if (data.pullRequests.length > 0) {
         // Load latest scan
@@ -238,9 +350,22 @@ document.addEventListener('DOMContentLoaded', () => {
     }
   }
 
+  async function loadRepoMemories(owner, name) {
+    try {
+      const res = await authFetch(`/api/repos/${owner}/${name}/memories`);
+      if (!res.ok) throw new Error('API fetch memories failed');
+      const data = await res.json();
+      renderRepoMemories(data.memories || []);
+    } catch (err) {
+      console.error('Error loading repository memories:', err);
+      el.repoMemoriesList.innerHTML = `<div class="empty-state"><p style="color: var(--error);">Error loading Parcle memories.</p></div>`;
+      el.repoMemoryCountBadge.textContent = '0 Memories';
+    }
+  }
+
   async function loadPRScan(owner, name, prNumber) {
     try {
-      const res = await fetch(`/api/repos/${owner}/${name}/pr/${prNumber}`);
+      const res = await authFetch(`/api/repos/${owner}/${name}/pr/${prNumber}`);
       if (!res.ok) throw new Error('API fetch failed');
       const data = await res.json();
 
@@ -271,7 +396,7 @@ document.addEventListener('DOMContentLoaded', () => {
       li.innerHTML = `
         <div class="repo-icon">📦</div>
         <div class="repo-details">
-          <div class="repo-name">${escapeHtml(repo.owner)}/${escapeHtml(repo.name)} ${proBadge}</div>
+          <div class="repo-name">${escapeHtml(repo.name)} ${proBadge}</div>
         </div>
         <div class="repo-score ${scoreClass}">${repoScore}/100</div>
       `;
@@ -323,7 +448,13 @@ document.addEventListener('DOMContentLoaded', () => {
     state.pullRequests.forEach(pr => {
       const opt = document.createElement('option');
       opt.value = pr.pr_number;
-      opt.text = `PR #${pr.pr_number} - Score: ${clampScore(pr.overall_score)}`;
+      if (pr.pr_number === 0) {
+        opt.text = `Baseline Scan - Score: ${clampScore(pr.overall_score)}`;
+      } else if (pr.pr_number < 0) {
+        opt.text = `${pr.title} - Score: ${clampScore(pr.overall_score)}`;
+      } else {
+        opt.text = `PR #${pr.pr_number} - Score: ${clampScore(pr.overall_score)}`;
+      }
       if (state.selectedPR && pr.pr_number === state.selectedPR.pr_number) {
         opt.selected = true;
       }
@@ -361,7 +492,13 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     // 2. Summary
-    el.selectedPRTitle.textContent = `PR #${pr.pr_number}: ${pr.title}`;
+    if (pr.pr_number === 0) {
+      el.selectedPRTitle.textContent = pr.title;
+    } else if (pr.pr_number < 0) {
+      el.selectedPRTitle.textContent = pr.title;
+    } else {
+      el.selectedPRTitle.textContent = `PR #${pr.pr_number}: ${pr.title}`;
+    }
     
     // Construct summary from risks / severity
     const criticalCount = risks.filter(r => r.severity === 'critical').length;
@@ -377,7 +514,30 @@ document.addEventListener('DOMContentLoaded', () => {
     }
     summaryText += `Verify the rule detections and annotations below.`;
     
-    el.analysisSummary.innerHTML = summaryText;
+    // Dynamic Score Calculation Report
+    const sec = clampScore(pr.security_score !== undefined ? pr.security_score : 100);
+    const rel = clampScore(pr.reliability_score !== undefined ? pr.reliability_score : 100);
+    const obs = clampScore(pr.observability_score !== undefined ? pr.observability_score : 100);
+    const perf = clampScore(pr.performance_score !== undefined ? pr.performance_score : 100);
+    const dep = clampScore(pr.deployment_score !== undefined ? pr.deployment_score : 100);
+
+    let scoreExplanation = `<div class="score-explanation-report" style="margin-top: 16px; font-size: 13px; color: var(--text-secondary); line-height: 1.6; border-top: 1px dashed rgba(255,255,255,0.08); padding-top: 16px;">`;
+    scoreExplanation += `<strong>🛡️ Score Calculation Report:</strong><br/>`;
+    scoreExplanation += `The overall health score is a weighted combination of five postures: <br/>`;
+    scoreExplanation += `<span style="font-family: monospace; color: var(--primary);">Overall Score = (Security × 30%) + (Reliability × 25%) + (Observability × 15%) + (Performance × 15%) + (Deployment × 15%)</span><br/>`;
+    scoreExplanation += `Specifically: <span style="font-family: monospace;">(${sec} × 0.3) + (${rel} × 0.25) + (${obs} × 0.15) + (${perf} × 0.15) + (${dep} × 0.15) = <strong>${score}/100</strong></span>.<br/>`;
+
+    if (ruleHits && ruleHits.length > 0) {
+      scoreExplanation += `<div style="margin-top: 8px; color: var(--error);">⚠️ <strong>Deterministic Clamping Applied:</strong> `;
+      const penaltyDetails = ruleHits.map(h => `"${escapeHtml(h.title || h.rule_id)}" (-${h.penalty} points to ${escapeHtml(h.dimension)})`).join(', ');
+      scoreExplanation += `The overall posture was capped or reduced by deterministic checks: ${penaltyDetails}.`;
+      scoreExplanation += `</div>`;
+    } else {
+      scoreExplanation += `<div style="margin-top: 8px; color: var(--success);">✓ <strong>Perfect Compliance:</strong> No deterministic rule violations or point deductions were flagged in this scan.</div>`;
+    }
+    scoreExplanation += `</div>`;
+
+    el.analysisSummary.innerHTML = summaryText + scoreExplanation;
 
     // 3. Render Dimensions Postures
     const dims = [
@@ -486,6 +646,44 @@ document.addEventListener('DOMContentLoaded', () => {
         `;
         el.memoriesPanel.appendChild(item);
       });
+    });
+  }
+
+  function renderRepoMemories(memories) {
+    el.repoMemoryCountBadge.textContent = `${memories.length} Stored Memories`;
+    el.repoMemoriesList.innerHTML = '';
+    
+    if (memories.length === 0) {
+      el.repoMemoriesList.innerHTML = `
+        <div class="empty-state">
+          <p>No memories stored in Parcle yet. Run a scan to build memory context.</p>
+        </div>
+      `;
+      return;
+    }
+
+    memories.forEach(m => {
+      const item = document.createElement('div');
+      item.className = 'memory-match-item';
+      
+      const dateStr = m.metadata?.ts 
+        ? new Date(m.metadata.ts).toLocaleString()
+        : 'recent';
+      const prRef = m.metadata?.prNumber !== undefined 
+        ? (m.metadata.prNumber === 0 ? 'Baseline Scan' : m.metadata.prNumber < 0 ? `Commit Scan` : `PR #${m.metadata.prNumber}`) 
+        : 'Scan';
+      const patternId = m.metadata?.pattern || 'general';
+
+      item.innerHTML = `
+        <div class="memory-match-header" style="color: var(--primary); display: flex; justify-content: space-between; align-items: center;">
+          <span>Pattern: <strong>${escapeHtml(patternId)}</strong> (${escapeHtml(prRef)})</span>
+          <span style="color: var(--text-muted); font-size: 11px;">${escapeHtml(dateStr)}</span>
+        </div>
+        <div class="memory-match-text" style="border-left: 2px solid var(--primary); background: rgba(99, 102, 241, 0.02);">
+          ${escapeHtml(m.content)}
+        </div>
+      `;
+      el.repoMemoriesList.appendChild(item);
     });
   }
 

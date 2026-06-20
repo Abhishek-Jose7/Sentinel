@@ -343,7 +343,6 @@ ${risk.why}
 
     return await res.json();
   }
-
   // Fetch past pull requests
   async getPastPullRequests(token: string, owner: string, repo: string, limit = 5): Promise<any[]> {
     const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/pulls?state=all&per_page=${limit}`, {
@@ -360,8 +359,99 @@ ${risk.why}
 
     return await res.json() as any[];
   }
-}
 
+  // Fetch recent commits of a repository
+  async getRecentCommits(token: string, owner: string, repo: string, limit = 5): Promise<any[]> {
+    const res = await fetch(`https://api.github.com/repos/${owner}/${repo}/commits?per_page=${limit}`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Sentinel-App'
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to get recent commits: ${res.status}`);
+    }
+
+    return await res.json() as any[];
+  }
+
+  // Create GitHub Issue for the Baseline Report
+  async createBaselineReportIssue(
+    token: string,
+    repoOwner: string,
+    repoName: string,
+    score: number,
+    hits: RuleHit[],
+    risks: Risk[],
+    summary: string
+  ): Promise<void> {
+    const penaltyLines = hits.map(h => `- **[${h.dimension}]** ${h.title} (-${h.penalty}): ${h.description}`).join('\n') || '_None_';
+    const riskLines = risks.map(r => `- **[${r.severity}] ${r.title}** in \`${r.location}\` (\`pattern:${r.id}\`)\n  *Why:* ${r.why}`).join('\n') || '_None_';
+
+    const bodyText = `# 🛡️ Sentinel Baseline Posture Report
+
+Sentinel has completed the initial scan and established a posture baseline for this repository.
+
+### **Baseline Score:** **${score}/100**
+
+---
+
+### 📊 Verifiable Penalties (Deterministic Rule Hits)
+These are binary, verifiable checks of engineering health:
+${penaltyLines}
+
+---
+
+### 🔍 Predicted Risks & Failure Predictions
+These are code-level predictions and inferences from Sentinel's reasoning engine:
+${riskLines}
+
+---
+
+### 📝 Summary
+${summary}
+
+---
+*Sentinel audits what can be verified and predicts what cannot.*`;
+
+    // Check if a baseline report issue already exists to avoid duplicates
+    const listRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues?labels=sentinel-baseline&state=all`, {
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'User-Agent': 'Sentinel-App'
+      }
+    });
+    if (listRes.ok) {
+      const issues = await listRes.json() as any[];
+      if (issues.length > 0) {
+        console.log('Sentinel baseline issue already exists, skipping issue creation.');
+        return;
+      }
+    }
+
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/issues`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Sentinel-App'
+      },
+      body: JSON.stringify({
+        title: `🛡️ [Sentinel] Baseline Posture Report`,
+        body: bodyText,
+        labels: ['sentinel-baseline', 'sentinel-report']
+      })
+    });
+
+    if (!res.ok) {
+      console.error(`Failed to create baseline issue: ${res.status} ${await res.text()}`);
+    }
+  }
+}
 // Generates the pattern match Markdown section
 export function buildPatternMatchSection(
   matchedHistory: Array<{ hit: PatternMatchHit; memories: PatternMemory[] }>

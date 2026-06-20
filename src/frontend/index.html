@@ -31,11 +31,11 @@
       </div>
 
       <div class="sidebar-footer">
-        <div class="user-badge">
-          <div class="user-avatar">👤</div>
+        <div class="user-badge" id="user-badge-container" style="cursor: pointer;" title="Click to Sign Out">
+          <div class="user-avatar" id="user-avatar">👤</div>
           <div class="user-info">
-            <p class="user-name">Developer Admin</p>
-            <p class="user-role">Lead Integration Eng</p>
+            <p class="user-name" id="user-name">Developer Admin</p>
+            <p class="user-role" id="user-role">Lead Integration Eng</p>
           </div>
         </div>
       </div>
@@ -52,7 +52,7 @@
         </div>
         
         <div class="header-actions">
-          <button class="btn" id="btn-sync-repo">🔄 Sync Repo</button>
+          <button class="btn" id="btn-sync-repo">🔍 Scan Repo</button>
           <button class="btn btn-pro" id="btn-activate-modal">⚡ Enter Pro</button>
           
           <div class="pr-selector-wrapper">
@@ -126,6 +126,22 @@
         </section>
 
       </div>
+
+      <!-- Repository Parcle Memory Bank -->
+      <section class="repo-memories-section" style="margin-top: 32px; border-top: 1px solid var(--card-border); padding-top: 24px;">
+        <div class="column-header">
+          <h3>📦 Repository Parcle Memory Bank (Proof of Memory)</h3>
+          <span class="badge badge-memory active" id="repo-memory-count-badge">0 Stored Memories</span>
+        </div>
+        <div class="card repo-memories-card" style="margin-top: 16px; padding: 24px; min-height: 120px;">
+          <div class="repo-memories-list" id="repo-memories-list" style="display: flex; flex-direction: column; gap: 12px;">
+            <!-- Dynamically populated repo-wide memories -->
+            <div class="empty-state">
+              <p>No memories stored in Parcle yet. Run a scan to build memory context.</p>
+            </div>
+          </div>
+        </div>
+      </section>
     </main>
 
     <!-- Empty Dashboard State -->
@@ -171,6 +187,18 @@
           </div>
           <button type="submit" class="btn btn-primary btn-block">Activate License</button>
         </form>
+      </div>
+    </div>
+
+    <!-- GitHub OAuth Login Overlay -->
+    <div class="login-overlay" id="login-overlay">
+      <div class="login-box">
+        <div class="logo-icon" style="font-size: 48px; margin-bottom: 16px;">🛡️</div>
+        <h2>Welcome to Sentinel</h2>
+        <p>Sign in with your GitHub account to access your repositories and PR audits securely.</p>
+        <button id="btn-github-login" class="btn btn-primary btn-block" style="display: flex; align-items: center; justify-content: center; gap: 8px;">
+          Sign in with GitHub
+        </button>
       </div>
     </div>
 

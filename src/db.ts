@@ -110,7 +110,7 @@ export class DbHelper {
     ).bind(id, owner, name).run();
   }
 
-  async updateRepoScore(id: number, score: number, deploymentHealthScore: number | null = null, combinedScore: number | null = null): Promise<void> {
+  async updateRepoScore(id: number, score: number | null, deploymentHealthScore: number | null = null, combinedScore: number | null = null): Promise<void> {
     if (!this.db) return;
     await this.db.prepare(
       'UPDATE repositories SET current_score = ?, deployment_health_score = ?, combined_score = ? WHERE id = ?'

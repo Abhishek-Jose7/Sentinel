@@ -525,6 +525,8 @@ document.addEventListener('DOMContentLoaded', () => {
   function startScanPolling(owner, name) {
     if (activePollInterval) return;
 
+    showNoPRsState();
+
     const scanHud = document.getElementById('live-scan-hud');
     const logsEl = document.getElementById('live-scan-logs');
     const bar = document.getElementById('live-scan-progress-bar');

@@ -22,6 +22,7 @@ export interface PatternMemory extends Memory {
 export class ParcleClient {
   private apiKey: string | null;
   private db: any; // D1Database
+  private static registeredUsers = new Set<string>();
 
   constructor(apiKey: string | null, db: any) {
     this.apiKey = apiKey || null;
@@ -37,18 +38,23 @@ export class ParcleClient {
         const prNumber = metadata?.prNumber || 0;
         const resolved = metadata?.resolved ? true : false;
 
-        // Register user first
-        await fetch('https://api.parcle.ai/v1/users', {
-          method: 'POST',
-          headers: {
-            'Authorization': `Bearer ${this.apiKey}`,
-            'Content-Type': 'application/json'
-          },
-          body: JSON.stringify({
-            user_id: userId,
-            name: userId
-          })
-        });
+        // Register user first (cached in this worker container instance)
+        if (!ParcleClient.registeredUsers.has(userId)) {
+          const regRes = await fetch('https://api.parcle.ai/v1/users', {
+            method: 'POST',
+            headers: {
+              'Authorization': `Bearer ${this.apiKey}`,
+              'Content-Type': 'application/json'
+            },
+            body: JSON.stringify({
+              user_id: userId,
+              name: userId
+            })
+          });
+          if (regRes.ok) {
+            ParcleClient.registeredUsers.add(userId);
+          }
+        }
 
         const res = await fetch('https://api.parcle.ai/v1/memories/ingest_dialog', {
           method: 'POST',
@@ -117,7 +123,7 @@ export class ParcleClient {
         }
 
         const data = await res.json() as any;
-        const sources = data.sources || [];
+        const sources = (data.sources || []).slice(0, limit);
         const memories: PatternMemory[] = [];
 
         for (const source of sources) {
@@ -314,7 +320,7 @@ export class ParcleClient {
           return this.recallLocalByRepo(repo, limit);
         }
         const data = await res.json() as any;
-        const sources = data.sources || [];
+        const sources = (data.sources || []).slice(0, limit);
         const memories: PatternMemory[] = [];
 
         for (const source of sources) {

@@ -1722,7 +1722,9 @@ h1, h2, h3, h4, h5, h6, select, button, input {
   display: grid !important;
   grid-template-columns: 420px minmax(0, 1fr) !important;
   flex-grow: 1 !important;
-  height: auto !important;
+  flex-shrink: 1 !important;
+  flex-basis: 0% !important;
+  min-height: 0 !important;
   overflow: hidden !important;
 }
 
@@ -1732,6 +1734,10 @@ h1, h2, h3, h4, h5, h6, select, button, input {
   display: flex !important;
   flex-direction: column !important;
   gap: 20px !important;
+}
+
+.dashboard-pane > * {
+  flex-shrink: 0 !important;
 }
 
 .pane-left {
@@ -2134,5 +2140,47 @@ body {
   text-shadow: none !important;
   box-shadow: none !important;
   filter: none !important;
+}
+
+/* Collapsible sidebar overrides to support Stark Flat HUD theme */
+.app-container.sidebar-collapsed {
+  grid-template-columns: 64px minmax(0, 1fr) !important;
+}
+
+.app-container.sidebar-collapsed .sidebar {
+  padding: 16px 8px !important;
+}
+
+.app-container.sidebar-collapsed .brand {
+  flex-direction: column !important;
+  gap: 12px !important;
+  padding-bottom: 12px !important;
+}
+
+.app-container.sidebar-collapsed .brand-text,
+.app-container.sidebar-collapsed .sidebar-section h2,
+.app-container.sidebar-collapsed .repo-details,
+.app-container.sidebar-collapsed .user-info {
+  display: none !important;
+}
+
+.app-container.sidebar-collapsed .repo-item {
+  padding: 8px 0 !important;
+  justify-content: center !important;
+}
+
+.app-container.sidebar-collapsed .repo-icon {
+  font-size: 20px !important;
+}
+
+.app-container.sidebar-collapsed .user-badge {
+  padding: 8px 0 !important;
+  justify-content: center !important;
+}
+
+.app-container.sidebar-collapsed .btn-toggle-sidebar {
+  margin-left: 0 !important;
+  margin-top: 4px !important;
+  transform: rotate(180deg) !important;
 }
 

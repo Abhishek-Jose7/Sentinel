@@ -509,7 +509,10 @@ export default {
         }
 
         const reposList = await db.listRepos();
-        const filteredRepos = reposList.filter(r => allowedRepoIds.has(r.id));
+        const filteredRepos = reposList.filter(r => 
+          allowedRepoIds.has(r.id) || 
+          r.owner.toLowerCase() === session.login.toLowerCase()
+        );
 
         return new Response(JSON.stringify(filteredRepos), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }

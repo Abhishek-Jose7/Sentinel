@@ -454,6 +454,13 @@ document.addEventListener('DOMContentLoaded', () => {
   }
 
   async function loadRepository(owner, name) {
+    // Immediately display selected repository header and reset pane to loading/no-pr state
+    const foundRepo = state.repositories.find(r => r.owner === owner && r.name === name);
+    state.selectedRepo = foundRepo || { owner, name };
+    state.isPro = foundRepo ? !!foundRepo.is_pro : false;
+    updateDashboardHeader();
+    showNoPRsState();
+
     try {
       const res = await authFetch(`/api/repos/${owner}/${name}`);
       if (!res.ok) throw new Error('API fetch failed');
@@ -484,6 +491,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     } catch (err) {
       console.error('Error loading repository details:', err);
+      el.analysisSummary.innerHTML = `<div style="color: var(--error); font-weight: 600; margin-top: 14px;">⚠️ Failed to retrieve repository posture from GitHub. Verify your access permissions.</div>`;
     }
   }
 

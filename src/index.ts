@@ -248,6 +248,10 @@ export default {
 
         try {
           const currentRedirectUri = env.VERCEL_REDIRECT_URI || `${url.origin}/api/auth/vercel/callback`;
+          console.log({
+            clientId: env.VERCEL_CLIENT_ID,
+            secretPresent: !!env.VERCEL_CLIENT_SECRET,
+          });
           const vercel = new VercelClient();
           const { access_token, user_id, team_id } = await vercel.exchangeOAuthCode(
             code,

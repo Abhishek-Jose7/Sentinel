@@ -42,7 +42,7 @@ export class GroqEngine {
   private apiKey: string;
   private model: string;
 
-  constructor(apiKey: string, model = 'llama3-8b-8192') {
+  constructor(apiKey: string, model = 'llama-3.1-8b-instant') {
     this.apiKey = apiKey;
     this.model = model;
   }

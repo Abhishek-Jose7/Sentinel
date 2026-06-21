@@ -139,6 +139,69 @@ export class GitHubClient {
     onProgress?: (path: string) => Promise<void>
   ): Promise<Record<string, string>> {
     const files: Record<string, string> = {};
+    if (paths.length === 0) return files;
+
+    try {
+      const aliasMap: Record<string, string> = {};
+      const fields: string[] = [];
+      paths.forEach((path, index) => {
+        const alias = `file_${index}`;
+        aliasMap[alias] = path;
+        const expression = `${ref}:${path}`;
+        fields.push(`${alias}: object(expression: ${JSON.stringify(expression)}) { ... on Blob { text } }`);
+      });
+
+      const query = `
+        query($owner: String!, $name: String!) {
+          repository(owner: $owner, name: $name) {
+            ${fields.join('\n            ')}
+          }
+        }
+      `;
+
+      const response = await fetch('https://api.github.com/graphql', {
+        method: 'POST',
+        headers: {
+          'Authorization': `bearer ${token}`,
+          'Content-Type': 'application/json',
+          'User-Agent': 'Sentinel-App'
+        },
+        body: JSON.stringify({
+          query,
+          variables: {
+            owner: repoOwner,
+            name: repoName
+          }
+        })
+      });
+
+      if (!response.ok) {
+        throw new Error(`GraphQL fetch failed: status ${response.status}`);
+      }
+
+      const resJson = await response.json() as any;
+      if (resJson.errors && resJson.errors.length > 0) {
+        console.warn('GraphQL returned errors:', JSON.stringify(resJson.errors));
+      }
+
+      const repoData = resJson.data?.repository;
+      if (repoData) {
+        for (const [alias, path] of Object.entries(aliasMap)) {
+          const blob = repoData[alias];
+          if (blob && typeof blob.text === 'string') {
+            files[path] = blob.text;
+            if (onProgress) {
+              await onProgress(path);
+            }
+          }
+        }
+        return files;
+      }
+    } catch (err) {
+      console.warn('GitHub GraphQL query failed, falling back to REST:', err);
+    }
+
+    // Fallback: original REST fetch loop
     for (const path of paths) {
       if (onProgress) {
         await onProgress(path);

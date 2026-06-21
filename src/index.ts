@@ -210,7 +210,7 @@ export default {
           return new Response('Missing JWT token', { status: 400 });
         }
         const clientId = env.VERCEL_CLIENT_ID || '';
-        const redirectUri = env.VERCEL_REDIRECT_URI || '';
+        const redirectUri = env.VERCEL_REDIRECT_URI || `${url.origin}/api/auth/vercel/callback`;
         const vercelAuthUrl = `https://vercel.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(token)}`;
         return Response.redirect(vercelAuthUrl, 302);
       }
@@ -247,7 +247,7 @@ export default {
             code,
             env.VERCEL_CLIENT_ID || '',
             env.VERCEL_CLIENT_SECRET || '',
-            env.VERCEL_REDIRECT_URI || ''
+            env.VERCEL_REDIRECT_URI || `${url.origin}/api/auth/vercel/callback`
           );
 
           await db.upsertVercelConnection(session.login, access_token, team_id);
@@ -1139,7 +1139,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       owner,
       repo,
       defaultBranch,
-      30,
+      12,
       45000,
       async (filePath) => {
         await db.updateRepoScanStatus(repoId, 'scanning', `Stage 2/7: Analysing ${filePath}...`);
@@ -1244,85 +1244,10 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       ? Math.round(baselineOverallScore * 0.6 + deploymentHealthScore * 0.4)
       : baselineOverallScore;
 
-    await db.upsertPR({
-      id: baselinePrId,
-      repo_id: repoId,
-      pr_number: 0,
-      title: `Baseline Posture Scan (${defaultBranch})`,
-      state: 'merged',
-      overall_score: baselineOverallScore,
-      security_score: baselineClamped.dimensions.security,
-      reliability_score: baselineClamped.dimensions.reliability,
-      observability_score: baselineClamped.dimensions.observability,
-      performance_score: baselineClamped.dimensions.performance,
-      deployment_score: baselineClamped.dimensions.deployment,
-      thought_process: baselineAnalysis.summary ? `SUMMARY: ${baselineAnalysis.summary}\n\nTHOUGHT PROCESS:\n${baselineAnalysis.thought_process || ''}` : (baselineAnalysis.thought_process || null),
-      deployment_health_score: deploymentHealthScore,
-      combined_score: combinedScore,
-      predicted_failure_point: baselineAnalysis.predicted_failure_point || null,
-      predicted_failure_why: baselineAnalysis.predicted_failure_why || null,
-      predicted_failure_impact: baselineAnalysis.predicted_failure_impact || null,
-      predicted_failure_confidence: baselineAnalysis.predicted_failure_confidence || null,
-      recommended_fixes: baselineAnalysis.recommended_fixes ? JSON.stringify(baselineAnalysis.recommended_fixes) : null
-    });
-
-    // Insert baseline rule hits
-    await db.clearPRRuleHits(baselinePrId);
-    for (const hit of hits) {
-      await db.insertRuleHit({
-        id: `${baselinePrId}:${hit.id}`,
-        pr_id: baselinePrId,
-        rule_id: hit.id,
-        dimension: hit.dimension,
-        penalty: hit.penalty,
-        title: hit.title,
-        description: hit.description
-      });
-    }
-
-    // Insert baseline risks
-    await db.clearPRRisks(baselinePrId);
-    for (const risk of baselineAnalysis.risks) {
-      await db.insertRisk({
-        id: `${baselinePrId}:${crypto.randomUUID()}`,
-        pr_id: baselinePrId,
-        pattern_id: risk.id,
-        title: risk.title,
-        location: risk.location,
-        why: risk.why,
-        severity: risk.severity
-      });
-    }
-
-    for (const hit of hits) {
-      await parcle.storePattern(
-        `[Baseline] ${hit.title}: ${hit.description} Dimension ${hit.dimension} lost ${hit.penalty} points. Scanned ${facts.scannedFileCount} files.`,
-        hit.id,
-        repoFullName,
-        { prNumber: 0, tags: ['baseline', hit.dimension] }
-      );
-    }
-
-    // Post the Baseline Report as a GitHub Issue in the repository (Option A)
-    try {
-      await github.createBaselineReportIssue(
-        token,
-        owner,
-        repo,
-        baselineOverallScore,
-        hits,
-        baselineAnalysis.risks,
-        baselineAnalysis.summary
-      );
-      console.log(`Baseline report issue created in GitHub for ${repoFullName}`);
-    } catch (issueErr) {
-      console.error(`Failed to create baseline report issue:`, issueErr);
-    }
-
-        // Fetch recent commits and backfill them as commit scans in D1 (limit to 10 commits)
+    // Fetch recent commits and backfill them as commit scans in D1 (limit to 3 commits)
     try {
       console.log(`Fetching recent commits for ${repoFullName} to populate commit scan history...`);
-      const commits = await github.getRecentCommits(token, owner, repo, 10);
+      const commits = await github.getRecentCommits(token, owner, repo, 3);
       console.log(`Found ${commits.length} commits to backfill.`);
 
       for (let i = 0; i < commits.length; i++) {
@@ -1330,7 +1255,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
         const sha = commitObj.sha;
         const shortSha = sha.substring(0, 7);
         const commitMessage = commitObj.commit.message.split('\n')[0];
-        const commitPrNumber = -(i + 1); // -1, -2, -3, -4, -5
+        const commitPrNumber = -(i + 1); // -1, -2, -3
         const commitPrId = `${repoFullName}/pull/${commitPrNumber}`;
         const commitPrTitle = `Commit [${shortSha}]: ${commitMessage}`;
 
@@ -1434,8 +1359,9 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     } catch (commitsErr) {
       console.error(`Failed to fetch recent commits:`, commitsErr);
     }
-    // Fetch last 3 pull requests (closed, merged, or open) to fit within Cloudflare's subrequests limit safely
-    const pastPRs = await github.getPastPullRequests(token, owner, repo, 3);
+
+    // Fetch last 2 pull requests (closed, merged, or open) to fit within Cloudflare's subrequests limit safely
+    const pastPRs = await github.getPastPullRequests(token, owner, repo, 2);
     console.log(`Found ${pastPRs.length} past pull requests to backfill.`);
 
     for (const pr of pastPRs) {
@@ -1455,15 +1381,6 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
 
         // Run Deterministic checks using loaded baseline files + PR diff to minimize subrequests
         const prHits = runDeterministicChecks({ files, diff });
-
-        // Memory Recall loop
-        const patternMatches = await Promise.all(
-          prHits.map(h => parcle.recallByPattern(h.id, repoFullName))
-        );
-        const matchedHistory = prHits.map((h, idx) => ({
-          hit: h,
-          memories: patternMatches[idx]
-        })).filter(m => m.memories.length > 0);
 
         // Skip Groq analysis for historical backfilled PRs to avoid API limits (12k TPM)
         const prDimensions = scoreFromFacts(prHits);
@@ -1546,6 +1463,84 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       } catch (prErr) {
         console.error(`Failed to backfill PR #${prNumber}:`, prErr);
       }
+    }
+
+    // Stage 7/7: Storing baseline posture report in database
+    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 7/7: Storing baseline posture report in database...');
+
+    await db.upsertPR({
+      id: baselinePrId,
+      repo_id: repoId,
+      pr_number: 0,
+      title: `Baseline Posture Scan (${defaultBranch})`,
+      state: 'merged',
+      overall_score: baselineOverallScore,
+      security_score: baselineClamped.dimensions.security,
+      reliability_score: baselineClamped.dimensions.reliability,
+      observability_score: baselineClamped.dimensions.observability,
+      performance_score: baselineClamped.dimensions.performance,
+      deployment_score: baselineClamped.dimensions.deployment,
+      thought_process: baselineAnalysis.summary ? `SUMMARY: ${baselineAnalysis.summary}\n\nTHOUGHT PROCESS:\n${baselineAnalysis.thought_process || ''}` : (baselineAnalysis.thought_process || null),
+      deployment_health_score: deploymentHealthScore,
+      combined_score: combinedScore,
+      predicted_failure_point: baselineAnalysis.predicted_failure_point || null,
+      predicted_failure_why: baselineAnalysis.predicted_failure_why || null,
+      predicted_failure_impact: baselineAnalysis.predicted_failure_impact || null,
+      predicted_failure_confidence: baselineAnalysis.predicted_failure_confidence || null,
+      recommended_fixes: baselineAnalysis.recommended_fixes ? JSON.stringify(baselineAnalysis.recommended_fixes) : null
+    });
+
+    // Insert baseline rule hits
+    await db.clearPRRuleHits(baselinePrId);
+    for (const hit of hits) {
+      await db.insertRuleHit({
+        id: `${baselinePrId}:${hit.id}`,
+        pr_id: baselinePrId,
+        rule_id: hit.id,
+        dimension: hit.dimension,
+        penalty: hit.penalty,
+        title: hit.title,
+        description: hit.description
+      });
+    }
+
+    // Insert baseline risks
+    await db.clearPRRisks(baselinePrId);
+    for (const risk of baselineAnalysis.risks) {
+      await db.insertRisk({
+        id: `${baselinePrId}:${crypto.randomUUID()}`,
+        pr_id: baselinePrId,
+        pattern_id: risk.id,
+        title: risk.title,
+        location: risk.location,
+        why: risk.why,
+        severity: risk.severity
+      });
+    }
+
+    for (const hit of hits) {
+      await parcle.storePattern(
+        `[Baseline] ${hit.title}: ${hit.description} Dimension ${hit.dimension} lost ${hit.penalty} points. Scanned ${facts.scannedFileCount} files.`,
+        hit.id,
+        repoFullName,
+        { prNumber: 0, tags: ['baseline', hit.dimension] }
+      );
+    }
+
+    // Post the Baseline Report as a GitHub Issue in the repository
+    try {
+      await github.createBaselineReportIssue(
+        token,
+        owner,
+        repo,
+        baselineOverallScore,
+        hits,
+        baselineAnalysis.risks,
+        baselineAnalysis.summary
+      );
+      console.log(`Baseline report issue created in GitHub for ${repoFullName}`);
+    } catch (issueErr) {
+      console.error(`Failed to create baseline report issue:`, issueErr);
     }
 
     await db.updateRepoScore(repoId, baselineOverallScore, deploymentHealthScore, combinedScore);

@@ -211,7 +211,7 @@ export default {
         }
         const clientId = env.VERCEL_CLIENT_ID || '';
         const redirectUri = env.VERCEL_REDIRECT_URI || `${url.origin}/api/auth/vercel/callback`;
-        const vercelAuthUrl = `https://vercel.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(token)}`;
+        const vercelAuthUrl = `https://vercel.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(token)}&response_type=code`;
         return Response.redirect(vercelAuthUrl, 302);
       }
 

@@ -221,7 +221,12 @@ export default {
         const state = url.searchParams.get('state');
 
         if (!code || !state) {
-          return new Response('Missing code or state parameters', { status: 400 });
+          const oauthError = url.searchParams.get('error');
+          const oauthErrorDesc = url.searchParams.get('error_description');
+          if (oauthError) {
+            return new Response(`Vercel OAuth Error: ${oauthError} (${oauthErrorDesc || 'No description'})`, { status: 400 });
+          }
+          return new Response(`Missing code or state parameters. (URL Query: ${url.search})`, { status: 400 });
         }
 
         // Verify state (GitHub JWT)

@@ -483,8 +483,13 @@ document.addEventListener('DOMContentLoaded', () => {
         if (scanHud) scanHud.style.display = 'none';
 
         if (data.pullRequests.length > 0) {
-          // Load latest scan
-          loadPRScan(owner, name, data.pullRequests[0].pr_number);
+          // Default to the baseline scan (pr_number === 0) if present, otherwise load latest scan
+          const baselinePR = data.pullRequests.find(pr => pr.pr_number === 0);
+          if (baselinePR) {
+            loadPRScan(owner, name, 0);
+          } else {
+            loadPRScan(owner, name, data.pullRequests[0].pr_number);
+          }
         } else {
           showNoPRsState();
         }
@@ -597,7 +602,12 @@ document.addEventListener('DOMContentLoaded', () => {
             populatePRSelector();
             loadRepoMemories(owner, name);
             if (data.pullRequests.length > 0) {
-              loadPRScan(owner, name, data.pullRequests[0].pr_number);
+              const baselinePR = data.pullRequests.find(pr => pr.pr_number === 0);
+              if (baselinePR) {
+                loadPRScan(owner, name, 0);
+              } else {
+                loadPRScan(owner, name, data.pullRequests[0].pr_number);
+              }
             }
             loadRepositories(repo.id);
           }, 1800);
@@ -791,16 +801,26 @@ document.addEventListener('DOMContentLoaded', () => {
 
     // Predict predictions rendering
     if (el.predictFailurePoint) {
-      el.predictFailurePoint.textContent = pr.predicted_failure_point || 'No failure point predicted.';
+      el.predictFailurePoint.textContent = pr.predicted_failure_point || (pr.pr_number !== 0 && pr.pr_number < 0 
+        ? 'Predictive analysis is disabled for historical commit scans.' 
+        : pr.pr_number > 0 && !pr.predicted_failure_point
+        ? 'Predictive analysis is disabled for backfilled past PRs.'
+        : 'No failure point predicted.');
     }
     if (el.predictFailureWhy) {
-      el.predictFailureWhy.textContent = pr.predicted_failure_why || 'No explanation available.';
+      el.predictFailureWhy.textContent = pr.predicted_failure_why || (pr.pr_number !== 0 
+        ? 'Select the "Baseline Scan" from the Audit Ref dropdown to view repository predictions.' 
+        : 'No explanation available.');
     }
     if (el.predictFailureImpact) {
-      el.predictFailureImpact.textContent = pr.predicted_failure_impact || 'No estimated impact available.';
+      el.predictFailureImpact.textContent = pr.predicted_failure_impact || (pr.pr_number !== 0 
+        ? 'N/A' 
+        : 'No estimated impact available.');
     }
     if (el.predictConfidenceBadge) {
-      el.predictConfidenceBadge.textContent = pr.predicted_failure_confidence !== null && pr.predicted_failure_confidence !== undefined ? `${pr.predicted_failure_confidence}%` : '--%';
+      el.predictConfidenceBadge.textContent = pr.predicted_failure_confidence !== null && pr.predicted_failure_confidence !== undefined 
+        ? `${pr.predicted_failure_confidence}%` 
+        : '--%';
     }
 
     // Key Verified Findings (facts extracted)

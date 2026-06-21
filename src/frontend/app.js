@@ -75,7 +75,9 @@ document.addEventListener('DOMContentLoaded', () => {
     vercelDeployCount: document.getElementById('vercel-deploy-count'),
     vercelLastDeployDot: document.getElementById('vercel-last-deploy-dot'),
     vercelLastDeployStatus: document.getElementById('vercel-last-deploy-status'),
-    vercelRiskDesc: document.getElementById('vercel-risk-desc')
+    vercelRiskDesc: document.getElementById('vercel-risk-desc'),
+    btnToggleSidebar: document.getElementById('btn-toggle-sidebar'),
+    appContainer: document.querySelector('.app-container')
   };
 
   // 1. Initial Load
@@ -144,6 +146,11 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 1. Initial Load
   async function init() {
+    const sidebarCollapsed = localStorage.getItem('sentinel_sidebar_collapsed') === 'true';
+    if (sidebarCollapsed && el.appContainer) {
+      el.appContainer.classList.add('sidebar-collapsed');
+    }
+
     const params = new URLSearchParams(window.location.search);
     const code = params.get('code');
     
@@ -187,6 +194,16 @@ document.addEventListener('DOMContentLoaded', () => {
 
   // 2. Event Listeners Setup
   function setupEventListeners() {
+    // Toggle Sidebar
+    if (el.btnToggleSidebar) {
+      el.btnToggleSidebar.addEventListener('click', () => {
+        if (el.appContainer) {
+          const isCollapsed = el.appContainer.classList.toggle('sidebar-collapsed');
+          localStorage.setItem('sentinel_sidebar_collapsed', isCollapsed ? 'true' : 'false');
+        }
+      });
+    }
+
     // GitHub Login Click
     el.btnGithubLogin.addEventListener('click', async () => {
       try {

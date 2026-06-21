@@ -395,97 +395,121 @@ export default {
         }
 
         const allowedRepoIds = new Set<number>();
-
-        // 1. Auto-discover installations and their repositories
-        try {
-          const installationsRes = await fetch('https://api.github.com/user/installations', {
-            headers: {
-              'Authorization': `token ${session.accessToken}`,
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Sentinel-App'
-            }
-          });
-
-          if (installationsRes.ok) {
-            const instData = await installationsRes.json() as any;
-            const installations = instData.installations || [];
-            
-            await Promise.all(installations.map(async (inst: any) => {
-              try {
-                const instRepos = await fetchAllGitHubPages(`https://api.github.com/user/installations/${inst.id}/repositories?per_page=100`, session.accessToken);
-                let newReposCount = 0;
-                for (const r of instRepos) {
-                  allowedRepoIds.add(r.id);
-                  const existing = await db.getRepo(r.owner.login, r.name);
-                  await db.upsertRepo(r.id, r.owner.login, r.name);
-                  if (!existing) {
-                    newReposCount++;
-                    if (newReposCount === 1) {
-                      ctx.waitUntil(runRepositorySync(r.owner.login, r.name, env, session.accessToken));
-                    }
-                  }
-                }
-              } catch (e) {
-                console.error(`Error auto-fetching repos for installation ${inst.id}:`, e);
-              }
-            }));
-          }
-        } catch (err) {
-          console.error('Error auto-discovering installations:', err);
-        }
-
-        // 2. Fallback / additional user repos to ensure direct permissions
-        try {
-          const ghRepos = await fetchAllGitHubPages('https://api.github.com/user/repos?per_page=100', session.accessToken);
-          for (const r of ghRepos) {
-            allowedRepoIds.add(r.id);
-            await db.upsertRepo(r.id, r.owner.login, r.name);
-          }
-        } catch (err) {
-          console.error('Error auto-fetching direct user repos:', err);
-        }
-
-        // 3. Extra Fallback: Fetch public repositories for user directly (does not require broad OAuth permissions)
-        try {
-          const publicRepos = await fetchAllGitHubPages(`https://api.github.com/users/${session.login}/repos?per_page=100`, session.accessToken);
-          for (const r of publicRepos) {
-            allowedRepoIds.add(r.id);
-            await db.upsertRepo(r.id, r.owner.login, r.name);
-          }
-        } catch (err) {
-          console.error('Error auto-fetching public repos fallback:', err);
-        }
-
-        // 4. Org Repos discovery fallback
-        try {
-          const orgsRes = await fetch('https://api.github.com/user/orgs', {
-            headers: {
-              'Authorization': `token ${session.accessToken}`,
-              'Accept': 'application/vnd.github.v3+json',
-              'User-Agent': 'Sentinel-App'
-            }
-          });
-
-          if (orgsRes.ok) {
-            const orgs = await orgsRes.json() as any[];
-            await Promise.all(orgs.map(async (org: any) => {
-              try {
-                const orgRepos = await fetchAllGitHubPages(`https://api.github.com/orgs/${org.login}/repos?per_page=100`, session.accessToken);
-                for (const r of orgRepos) {
-                  allowedRepoIds.add(r.id);
-                  await db.upsertRepo(r.id, r.owner.login, r.name);
-                }
-              } catch (e) {
-                console.error(`Error auto-fetching repos for org ${org.login}:`, e);
-              }
-            }));
-          }
-        } catch (err) {
-          console.error('Error auto-discovering org installations:', err);
-        }
-
         const repos = await db.listRepos();
-        const filteredRepos = repos.filter(r => allowedRepoIds.has(r.id));
+        const existingRepoIds = new Set(repos.map(r => r.id));
+        const discoveredRepos = new Map<number, { id: number; owner: string; name: string }>();
+
+        // Run all API discovery steps in parallel to save time
+        await Promise.all([
+          // 1. Auto-discover installations and their repositories
+          (async () => {
+            try {
+              const installationsRes = await fetch('https://api.github.com/user/installations', {
+                headers: {
+                  'Authorization': `token ${session.accessToken}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'User-Agent': 'Sentinel-App'
+                }
+              });
+
+              if (installationsRes.ok) {
+                const instData = await installationsRes.json() as any;
+                const installations = instData.installations || [];
+                
+                await Promise.all(installations.map(async (inst: any) => {
+                  try {
+                    const instRepos = await fetchAllGitHubPages(`https://api.github.com/user/installations/${inst.id}/repositories?per_page=100`, session.accessToken);
+                    for (const r of instRepos) {
+                      allowedRepoIds.add(r.id);
+                      discoveredRepos.set(r.id, { id: r.id, owner: r.owner.login, name: r.name });
+                    }
+                  } catch (e) {
+                    console.error(`Error auto-fetching repos for installation ${inst.id}:`, e);
+                  }
+                }));
+              }
+            } catch (err) {
+              console.error('Error auto-discovering installations:', err);
+            }
+          })(),
+
+          // 2. Fallback / additional user repos to ensure direct permissions
+          (async () => {
+            try {
+              const ghRepos = await fetchAllGitHubPages('https://api.github.com/user/repos?per_page=100', session.accessToken);
+              for (const r of ghRepos) {
+                allowedRepoIds.add(r.id);
+                discoveredRepos.set(r.id, { id: r.id, owner: r.owner.login, name: r.name });
+              }
+            } catch (err) {
+              console.error('Error auto-fetching direct user repos:', err);
+            }
+          })(),
+
+          // 3. Extra Fallback: Fetch public repositories for user directly
+          (async () => {
+            try {
+              const publicRepos = await fetchAllGitHubPages(`https://api.github.com/users/${session.login}/repos?per_page=100`, session.accessToken);
+              for (const r of publicRepos) {
+                allowedRepoIds.add(r.id);
+                discoveredRepos.set(r.id, { id: r.id, owner: r.owner.login, name: r.name });
+              }
+            } catch (err) {
+              console.error('Error auto-fetching public repos fallback:', err);
+            }
+          })(),
+
+          // 4. Org Repos discovery fallback
+          (async () => {
+            try {
+              const orgsRes = await fetch('https://api.github.com/user/orgs', {
+                headers: {
+                  'Authorization': `token ${session.accessToken}`,
+                  'Accept': 'application/vnd.github.v3+json',
+                  'User-Agent': 'Sentinel-App'
+                }
+              });
+
+              if (orgsRes.ok) {
+                const orgs = await orgsRes.json() as any[];
+                await Promise.all(orgs.map(async (org: any) => {
+                  try {
+                    const orgRepos = await fetchAllGitHubPages(`https://api.github.com/orgs/${org.login}/repos?per_page=100`, session.accessToken);
+                    for (const r of orgRepos) {
+                      allowedRepoIds.add(r.id);
+                      discoveredRepos.set(r.id, { id: r.id, owner: r.owner.login, name: r.name });
+                    }
+                  } catch (e) {
+                    console.error(`Error auto-fetching repos for org ${org.login}:`, e);
+                  }
+                }));
+              }
+            } catch (err) {
+              console.error('Error auto-discovering org installations:', err);
+            }
+          })()
+        ]);
+
+        const upsertPromises: Promise<void>[] = [];
+        let newReposCount = 0;
+        for (const [id, r] of discoveredRepos.entries()) {
+          if (!existingRepoIds.has(id)) {
+            newReposCount++;
+            upsertPromises.push((async () => {
+              await db.upsertRepo(r.id, r.owner, r.name);
+              // Trigger background sync for the first new repo found
+              if (newReposCount === 1) {
+                ctx.waitUntil(runRepositorySync(r.owner, r.name, env, session.accessToken));
+              }
+            })());
+          }
+        }
+        if (upsertPromises.length > 0) {
+          await Promise.all(upsertPromises);
+        }
+
+        const reposList = await db.listRepos();
+        const filteredRepos = reposList.filter(r => allowedRepoIds.has(r.id));
 
         return new Response(JSON.stringify(filteredRepos), {
           headers: { 'Content-Type': 'application/json', ...corsHeaders() }

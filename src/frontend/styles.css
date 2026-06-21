@@ -104,6 +104,11 @@ h1, h2, h3, h4, h5, h6 {
   display: grid;
   grid-template-columns: 300px 1fr;
   min-height: 100vh;
+  transition: grid-template-columns 0.25s cubic-bezier(0.16, 1, 0.3, 1);
+}
+
+.app-container.sidebar-collapsed {
+  grid-template-columns: 64px 1fr;
 }
 
 /* Sidebar styling */
@@ -117,6 +122,68 @@ h1, h2, h3, h4, h5, h6 {
   position: sticky;
   top: 0;
   z-index: 10;
+  transition: padding var(--t-smooth);
+}
+
+/* Collapsible Sidebar Styles */
+.btn-toggle-sidebar {
+  background: transparent;
+  border: 1px solid var(--border-hud);
+  color: var(--text-normal);
+  cursor: pointer;
+  padding: 4px 8px;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  border-radius: var(--radius-sm);
+  transition: all var(--t-smooth);
+  margin-left: auto;
+  line-height: 1;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.btn-toggle-sidebar:hover {
+  color: var(--primary);
+  border-color: var(--primary);
+  background: var(--primary-bg);
+}
+
+.app-container.sidebar-collapsed .sidebar {
+  padding: 32px 8px;
+}
+
+.app-container.sidebar-collapsed .brand {
+  flex-direction: column;
+  gap: 12px;
+  padding-bottom: 12px;
+}
+
+.app-container.sidebar-collapsed .brand-text,
+.app-container.sidebar-collapsed .sidebar-section h2,
+.app-container.sidebar-collapsed .repo-details,
+.app-container.sidebar-collapsed .user-info {
+  display: none;
+}
+
+.app-container.sidebar-collapsed .repo-item {
+  padding: 12px 0;
+  justify-content: center;
+}
+
+.app-container.sidebar-collapsed .repo-icon {
+  font-size: 20px;
+}
+
+.app-container.sidebar-collapsed .user-badge {
+  padding: 8px 0;
+  justify-content: center;
+}
+
+.app-container.sidebar-collapsed .btn-toggle-sidebar {
+  margin-left: 0;
+  margin-top: 4px;
+  transform: rotate(180deg);
 }
 
 .brand {
@@ -1479,7 +1546,7 @@ h1, h2, h3, h4, h5, h6, select, button, input {
 /* Restructure into clean 3-pane IDE layout */
 .app-container {
   display: grid !important;
-  grid-template-columns: 240px 1fr !important;
+  grid-template-columns: 240px minmax(0, 1fr) !important;
   height: 100vh !important;
   overflow: hidden !important;
   background: var(--bg-darkest) !important;
@@ -1653,7 +1720,7 @@ h1, h2, h3, h4, h5, h6, select, button, input {
 /* Two-pane content grid layout */
 .dashboard-panes-wrapper {
   display: grid !important;
-  grid-template-columns: 420px 1fr !important;
+  grid-template-columns: 420px minmax(0, 1fr) !important;
   flex-grow: 1 !important;
   height: auto !important;
   overflow: hidden !important;
@@ -1683,12 +1750,15 @@ h1, h2, h3, h4, h5, h6, select, button, input {
   padding: 16px !important;
   box-shadow: none !important;
   background-image: none !important;
+  position: relative !important;
+  display: block !important;
+  height: auto !important;
 }
 
 .score-hud-card {
   display: flex !important;
-  align-items: center !important;
-  justify-content: space-between !important;
+  flex-direction: column !important;
+  align-items: stretch !important;
   padding: 16px 20px !important;
 }
 

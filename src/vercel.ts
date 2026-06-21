@@ -22,15 +22,20 @@ export class VercelClient {
     code: string,
     clientId: string,
     clientSecret: string,
-    redirectUri: string
+    redirectUri: string,
+    codeVerifier?: string
   ): Promise<{ access_token: string; user_id: string; team_id: string | null }> {
     const params = new URLSearchParams();
     params.append('code', code);
     params.append('client_id', clientId);
     params.append('client_secret', clientSecret);
     params.append('redirect_uri', redirectUri);
+    params.append('grant_type', 'authorization_code');
+    if (codeVerifier) {
+      params.append('code_verifier', codeVerifier);
+    }
 
-    const res = await fetch('https://api.vercel.com/v2/oauth/access_token', {
+    const res = await fetch('https://api.vercel.com/login/oauth/token', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/x-www-form-urlencoded'
@@ -44,10 +49,25 @@ export class VercelClient {
     }
 
     const data = await res.json() as any;
+    console.log('Vercel OAuth response keys:', Object.keys(data));
+
+    let userId = data.user_id || '';
+    if (!userId && data.id_token) {
+      try {
+        const payloadPart = data.id_token.split('.')[1];
+        const base64 = payloadPart.replace(/-/g, '+').replace(/_/g, '/');
+        const decoded = atob(base64);
+        const payload = JSON.parse(decoded);
+        userId = payload.sub || '';
+      } catch (e) {
+        console.error('Failed to parse id_token payload:', e);
+      }
+    }
+
     return {
       access_token: data.access_token,
-      user_id: data.user_id,
-      team_id: data.team_id || null
+      user_id: userId,
+      team_id: data.team_id || data.teamId || null
     };
   }
 
@@ -57,7 +77,7 @@ export class VercelClient {
       throw new Error('VercelClient not authenticated.');
     }
 
-    let url = 'https://api.vercel.com/v9/projects';
+    let url = 'https://api.vercel.com/v10/projects';
     if (this.teamId) {
       url += `?teamId=${this.teamId}`;
     }
@@ -68,12 +88,86 @@ export class VercelClient {
       }
     });
 
+    const text = await res.text();
+    console.log('Vercel projects response status:', res.status, 'body:', text);
+
     if (!res.ok) {
-      throw new Error(`Failed to fetch Vercel projects: ${res.status} ${await res.text()}`);
+      throw new Error(`Failed to fetch Vercel projects: ${res.status} ${text}`);
+    }
+
+    const data = JSON.parse(text) as any;
+    return data.projects || [];
+  }
+
+  // Fetch all teams for the Vercel connection
+  async fetchTeams(): Promise<any[]> {
+    if (!this.accessToken) {
+      throw new Error('VercelClient not authenticated.');
+    }
+
+    const res = await fetch('https://api.vercel.com/v2/teams', {
+      headers: {
+        'Authorization': `Bearer ${this.accessToken}`
+      }
+    });
+
+    if (!res.ok) {
+      throw new Error(`Failed to fetch Vercel teams: ${res.status} ${await res.text()}`);
     }
 
     const data = await res.json() as any;
-    return data.projects || [];
+    return data.teams || [];
+  }
+
+  // Fetch projects from personal account and all accessible teams
+  async fetchAllProjects(): Promise<{ projects: any[]; error?: string }> {
+    // 1. Fetch default projects (personal or the scoped team)
+    let personalProjects: any[] = [];
+    let fetchError: string | undefined = undefined;
+    try {
+      personalProjects = await this.fetchProjects();
+      // Tag each default project with teamId (or null if personal)
+      personalProjects.forEach(p => p.teamId = this.teamId || null);
+    } catch (e) {
+      console.error('Failed to fetch default projects:', e);
+      fetchError = e instanceof Error ? e.message : String(e);
+    }
+
+    // 2. Fetch teams (only if not already scoped to a specific team)
+    let teams: any[] = [];
+    if (!this.teamId) {
+      try {
+        teams = await this.fetchTeams();
+      } catch (e) {
+        console.error('Failed to fetch teams:', e);
+        const msg = e instanceof Error ? e.message : String(e);
+        if (msg.includes('forbidden') || msg.includes('403')) {
+          fetchError = (fetchError ? fetchError + '; ' : '') + 'Forbidden listing teams: Please ensure your Vercel OAuth App has "Team details: Read" permissions enabled in your Vercel Developer settings.';
+        }
+      }
+    }
+
+    // 3. Fetch projects for each team
+    const teamProjectsPromises = teams.map(async (team) => {
+      try {
+        const clientForTeam = new VercelClient(this.accessToken, team.id);
+        const projects = await clientForTeam.fetchProjects();
+        // Tag each team project with teamId
+        projects.forEach(p => p.teamId = team.id);
+        return projects;
+      } catch (e) {
+        console.error(`Failed to fetch projects for team ${team.name}:`, e);
+        return [];
+      }
+    });
+
+    const teamProjectsResults = await Promise.all(teamProjectsPromises);
+    const allProjects = [...personalProjects];
+    for (const projects of teamProjectsResults) {
+      allProjects.push(...projects);
+    }
+
+    return { projects: allProjects, error: fetchError };
   }
 
   // Fetch recent deployments for a specific project

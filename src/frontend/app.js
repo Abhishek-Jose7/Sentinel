@@ -7,12 +7,14 @@ document.addEventListener('DOMContentLoaded', () => {
     selectedRepo: null,
     pullRequests: [],
     selectedPR: null,
-    isPro: false
+    isPro: false,
+    vercelConnected: false
   };
 
   // Polling tracker for active scanning
   let activePollInterval = null;
   let lastLoggedMessage = '';
+  let printedLogLines = new Set();
 
   // DOM Elements
   const el = {
@@ -130,6 +132,7 @@ document.addEventListener('DOMContentLoaded', () => {
       }
     }
     loadRepositories();
+    checkVercelConnection();
   }
 
   function showLoginOverlay() {
@@ -342,7 +345,13 @@ document.addEventListener('DOMContentLoaded', () => {
     
     // Connect Vercel triggers
     if (el.btnConnectVercel) {
-      el.btnConnectVercel.addEventListener('click', loadVercelProjects);
+      el.btnConnectVercel.addEventListener('click', () => {
+        if (state.vercelConnected) {
+          disconnectVercel();
+        } else {
+          loadVercelProjects();
+        }
+      });
     }
     if (el.btnConnectVercelBody) {
       el.btnConnectVercelBody.addEventListener('click', loadVercelProjects);
@@ -352,6 +361,8 @@ document.addEventListener('DOMContentLoaded', () => {
     window.addEventListener('message', async (event) => {
       if (event.data && event.data.type === 'vercel-connected') {
         alert('Vercel account connected successfully!');
+        state.vercelConnected = true;
+        updateVercelUI();
         await loadVercelProjects();
       }
     });
@@ -378,26 +389,64 @@ document.addEventListener('DOMContentLoaded', () => {
         const projectId = el.vercelProjectSelect.value;
         const opt = el.vercelProjectSelect.options[el.vercelProjectSelect.selectedIndex];
         const projectName = opt.text;
+        const teamId = opt.getAttribute('data-team-id') || null;
         if (!state.selectedRepo || !projectId) return;
-
-        try {
-          const res = await authFetch(`/api/repos/${state.selectedRepo.owner}/${state.selectedRepo.name}/vercel`, {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ projectId, projectName })
-          });
-          if (res.ok) {
-            el.vercelLinkModal.classList.remove('active');
-            alert('Vercel project linked successfully! Starting codebase/deployment sync scan...');
-            startScanPolling(state.selectedRepo.owner, state.selectedRepo.name);
-          } else {
-            const data = await res.json();
-            alert(`Link failed: ${data.error || 'Unknown error'}`);
-          }
-        } catch (err) {
-          alert('Failed to link Vercel project.');
-        }
+        await linkVercelProject(projectId, projectName, teamId);
       });
+    }
+  }
+
+  function findMatchingProject(projects, repoOwner, repoName) {
+    const cleanRepo = repoName.toLowerCase();
+    const cleanOwner = repoOwner.toLowerCase();
+    const fullName = `${cleanOwner}/${cleanRepo}`;
+
+    // 1. Try to find by git link (Vercel projects have a link configuration)
+    const byGitLink = projects.find(p => {
+      if (p.link && p.link.type === 'github') {
+        const pRepo = String(p.link.repo || '').toLowerCase();
+        const pOrg = String(p.link.org || '').toLowerCase();
+        if (pRepo === cleanRepo && (!pOrg || pOrg === cleanOwner)) return true;
+        if (pRepo === fullName) return true;
+      }
+      if (p.gitRepository) {
+        const pRepo = String(p.gitRepository.repo || '').toLowerCase();
+        if (pRepo === cleanRepo || pRepo === fullName) return true;
+      }
+      return false;
+    });
+    if (byGitLink) return byGitLink;
+
+    // 2. Try to find by project name matching repo name exactly
+    const byName = projects.find(p => String(p.name).toLowerCase() === cleanRepo);
+    if (byName) return byName;
+
+    // 3. Try to find by project name starting with or containing repo name
+    const byNameContains = projects.find(p => String(p.name).toLowerCase().includes(cleanRepo));
+    if (byNameContains) return byNameContains;
+
+    return null;
+  }
+
+  async function linkVercelProject(projectId, projectName, teamId) {
+    if (!state.selectedRepo || !projectId) return;
+
+    try {
+      const res = await authFetch(`/api/repos/${state.selectedRepo.owner}/${state.selectedRepo.name}/vercel`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ projectId, projectName, teamId: teamId || null })
+      });
+      if (res.ok) {
+        el.vercelLinkModal.classList.remove('active');
+        alert(`Vercel project linked successfully: ${projectName}! Starting codebase/deployment sync scan...`);
+        startScanPolling(state.selectedRepo.owner, state.selectedRepo.name);
+      } else {
+        const data = await res.json();
+        alert(`Link failed: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      alert('Failed to link Vercel project.');
     }
   }
 
@@ -407,17 +456,40 @@ document.addEventListener('DOMContentLoaded', () => {
       if (!res.ok) throw new Error('Failed to load Vercel projects');
       const data = await res.json();
       if (data.connected) {
-        // Connected! Populate select dropdown
+        state.vercelConnected = true;
+        updateVercelUI();
+        
+        if (data.error) {
+          alert(`Error fetching Vercel projects: ${data.error}`);
+        }
+        
+        // Auto-match if possible
+        if (state.selectedRepo) {
+          const matched = findMatchingProject(data.projects || [], state.selectedRepo.owner, state.selectedRepo.name);
+          if (matched) {
+            console.log('Auto-matched Vercel project:', matched.name, 'with teamId:', matched.teamId);
+            await linkVercelProject(matched.id, matched.name, matched.teamId);
+            return;
+          }
+        }
+
+        // Populate dropdown as fallback
         el.vercelProjectSelect.innerHTML = '<option value="">-- Choose Vercel Project --</option>';
         data.projects.forEach(p => {
           const opt = document.createElement('option');
           opt.value = p.id;
           opt.text = p.name;
+          if (p.teamId) {
+            opt.setAttribute('data-team-id', p.teamId);
+          }
           el.vercelProjectSelect.add(opt);
         });
         // Open linkage modal
         el.vercelLinkModal.classList.add('active');
       } else {
+        state.vercelConnected = false;
+        updateVercelUI();
+        
         // Not connected: open popup redirecting to OAuth Initiate
         const token = getJwt();
         const width = 600;
@@ -429,6 +501,66 @@ document.addEventListener('DOMContentLoaded', () => {
     } catch (e) {
       console.error(e);
       alert('Failed to connect to Vercel API connection service.');
+    }
+  }
+
+  async function checkVercelConnection() {
+    try {
+      const res = await authFetch('/api/vercel/projects');
+      if (res.ok) {
+        const data = await res.json();
+        state.vercelConnected = !!data.connected;
+        updateVercelUI();
+      }
+    } catch (e) {
+      console.error('Error checking Vercel connection status:', e);
+    }
+  }
+
+  function updateVercelUI() {
+    if (state.vercelConnected) {
+      if (el.btnConnectVercel) {
+        el.btnConnectVercel.innerHTML = '<span class="icon">▲</span> Disconnect Vercel';
+        el.btnConnectVercel.style.background = '#EF4444';
+        el.btnConnectVercel.style.borderColor = '#DC2626';
+      }
+      if (el.btnConnectVercelBody) {
+        el.btnConnectVercelBody.innerHTML = '<span class="icon">▲</span> Link Vercel Project';
+      }
+    } else {
+      if (el.btnConnectVercel) {
+        el.btnConnectVercel.innerHTML = '<span class="icon">▲</span> Connect Vercel';
+        el.btnConnectVercel.style.background = '#000';
+        el.btnConnectVercel.style.borderColor = '#333';
+      }
+      if (el.btnConnectVercelBody) {
+        el.btnConnectVercelBody.innerHTML = '<span class="icon">▲</span> Connect Vercel Account';
+      }
+    }
+  }
+
+  async function disconnectVercel() {
+    if (!confirm('Are you sure you want to disconnect your Vercel account? This will unlink all Vercel projects.')) {
+      return;
+    }
+    try {
+      const res = await authFetch('/api/auth/vercel/disconnect', {
+        method: 'POST'
+      });
+      if (res.ok) {
+        state.vercelConnected = false;
+        updateVercelUI();
+        alert('Disconnected from Vercel successfully.');
+        if (state.selectedRepo) {
+          await loadRepository(state.selectedRepo.owner, state.selectedRepo.name);
+        }
+      } else {
+        const data = await res.json();
+        alert(`Failed to disconnect: ${data.error || 'Unknown error'}`);
+      }
+    } catch (err) {
+      console.error('Error disconnecting from Vercel:', err);
+      alert('Failed to disconnect from Vercel.');
     }
   }
 
@@ -543,7 +675,8 @@ document.addEventListener('DOMContentLoaded', () => {
     if (percentText) percentText.textContent = '0%';
     
     lastLoggedMessage = '';
-
+    printedLogLines.clear();
+    
     // Disable triggers during scan
     if (el.btnSyncRepo) {
       el.btnSyncRepo.disabled = true;
@@ -579,12 +712,19 @@ document.addEventListener('DOMContentLoaded', () => {
         if (bar) bar.style.width = `${pct}%`;
         if (percentText) percentText.textContent = `${pct}%`;
 
-        if (msg && msg !== lastLoggedMessage) {
-          lastLoggedMessage = msg;
-          let styleClass = 'info';
-          if (msg.includes('Rule Hits') || msg.includes('risks')) styleClass = 'warning';
-          if (msg.includes('failed') || msg.includes('Error')) styleClass = 'error';
-          appendTerminalLog('AGENT', msg, styleClass);
+        if (msg) {
+          const lines = msg.split('\n');
+          lines.forEach(line => {
+            const trimmed = line.trim();
+            if (trimmed && !printedLogLines.has(trimmed)) {
+              printedLogLines.add(trimmed);
+              let styleClass = 'info';
+              if (trimmed.includes('Rule Hits') || trimmed.includes('risks') || trimmed.includes('Warning:')) styleClass = 'warning';
+              if (trimmed.includes('failed') || trimmed.includes('Error') || trimmed.includes('Failed')) styleClass = 'error';
+              if (trimmed.includes('completed successfully') || trimmed.includes('(OK)') || trimmed.includes('complete.')) styleClass = 'success';
+              appendTerminalLog('AGENT', trimmed, styleClass);
+            }
+          });
         }
 
         if (status === 'completed') {
@@ -924,9 +1064,15 @@ document.addEventListener('DOMContentLoaded', () => {
           }
         }
       } else {
-        el.vercelStatusBadge.textContent = 'NOT CONNECTED';
-        el.vercelStatusBadge.style.color = 'var(--text-muted)';
-        el.vercelStatusBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+        if (state.vercelConnected) {
+          el.vercelStatusBadge.textContent = 'ACCOUNT CONNECTED';
+          el.vercelStatusBadge.style.color = '#F59E0B';
+          el.vercelStatusBadge.style.background = 'rgba(245, 158, 11, 0.1)';
+        } else {
+          el.vercelStatusBadge.textContent = 'NOT CONNECTED';
+          el.vercelStatusBadge.style.color = 'var(--text-muted)';
+          el.vercelStatusBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+        }
         
         if (el.vercelConnectedView) el.vercelConnectedView.style.display = 'none';
         if (el.vercelDisconnectedView) el.vercelDisconnectedView.style.display = 'block';
@@ -1197,9 +1343,15 @@ document.addEventListener('DOMContentLoaded', () => {
     }
 
     if (el.vercelStatusBadge) {
-      el.vercelStatusBadge.textContent = 'NOT CONNECTED';
-      el.vercelStatusBadge.style.color = 'var(--text-muted)';
-      el.vercelStatusBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+      if (state.vercelConnected) {
+        el.vercelStatusBadge.textContent = 'ACCOUNT CONNECTED';
+        el.vercelStatusBadge.style.color = '#F59E0B';
+        el.vercelStatusBadge.style.background = 'rgba(245, 158, 11, 0.1)';
+      } else {
+        el.vercelStatusBadge.textContent = 'NOT CONNECTED';
+        el.vercelStatusBadge.style.color = 'var(--text-muted)';
+        el.vercelStatusBadge.style.background = 'rgba(255, 255, 255, 0.05)';
+      }
     }
     if (el.vercelConnectedView) el.vercelConnectedView.style.display = 'none';
     if (el.vercelDisconnectedView) el.vercelDisconnectedView.style.display = 'block';

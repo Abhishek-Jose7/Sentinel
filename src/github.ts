@@ -136,17 +136,26 @@ export class GitHubClient {
     repoName: string,
     ref: string,
     paths: string[],
-    onProgress?: (path: string) => Promise<void>
+    onProgress?: (msg: string) => Promise<void>
   ): Promise<Record<string, string>> {
     const files: Record<string, string> = {};
+    let scannedCount = 0;
     for (const path of paths) {
-      if (onProgress) {
-        await onProgress(path);
-      }
       const content = await this.getFileContent(token, repoOwner, repoName, path, ref);
-      if (content) {
+      if (content !== null) {
         files[path] = content;
+        scannedCount++;
+        if (onProgress) {
+          await onProgress(`Stage 2/7: Analysing ${path}... (OK)`);
+        }
+      } else {
+        if (onProgress) {
+          await onProgress(`Stage 2/7: Analysing ${path}... (FAILED/NOT_FOUND)`);
+        }
       }
+    }
+    if (onProgress) {
+      await onProgress(`Stage 2/7: Scan complete. Successfully loaded ${scannedCount} of ${paths.length} files.`);
     }
     return files;
   }
@@ -158,7 +167,7 @@ export class GitHubClient {
     repoName: string,
     ref: string,
     paths: string[],
-    onProgress?: (path: string) => Promise<void>
+    onProgress?: (msg: string) => Promise<void>
   ): Promise<Record<string, string>> {
     const treeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${encodeURIComponent(ref)}?recursive=1`, {
       headers: {
@@ -169,6 +178,7 @@ export class GitHubClient {
     });
 
     if (!treeRes.ok) {
+      if (onProgress) await onProgress(`Warning: Failed to fetch repository tree (${treeRes.status}). Falling back to fetching priority files directly...`);
       return this.fetchPriorityFiles(token, repoOwner, repoName, ref, paths, onProgress);
     }
 
@@ -177,6 +187,7 @@ export class GitHubClient {
     const existingPaths = new Set(tree.map((item: any) => item.path));
 
     const pathsToFetch = paths.filter(p => existingPaths.has(p));
+    if (onProgress) await onProgress(`Filtered to ${pathsToFetch.length} existing files from tree.`);
     return this.fetchPriorityFiles(token, repoOwner, repoName, ref, pathsToFetch, onProgress);
   }
 
@@ -187,8 +198,9 @@ export class GitHubClient {
     ref: string,
     maxFiles = 90,
     maxBytesPerFile = 45000,
-    onProgress?: (path: string) => Promise<void>
+    onProgress?: (msg: string) => Promise<void>
   ): Promise<Record<string, string>> {
+    if (onProgress) await onProgress(`Stage 2/7: Fetching repository tree for ref "${ref}"...`);
     const treeRes = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/git/trees/${encodeURIComponent(ref)}?recursive=1`, {
       headers: {
         'Authorization': `token ${token}`,
@@ -198,7 +210,7 @@ export class GitHubClient {
     });
 
     if (!treeRes.ok) {
-      console.warn(`Failed to fetch repository tree: ${treeRes.status}`);
+      if (onProgress) await onProgress(`Stage 2/7: Warning: Failed to fetch repository tree (status ${treeRes.status}). Falling back to priority files list...`);
       return this.fetchPriorityFiles(token, repoOwner, repoName, ref, [
         'package.json',
         'wrangler.toml',
@@ -224,6 +236,7 @@ export class GitHubClient {
       .slice(0, maxFiles)
       .map((item: any) => item.path);
 
+    if (onProgress) await onProgress(`Stage 2/7: Discovered ${tree.length} files total. Selected ${paths.length} priority files for posture analysis.`);
     return this.fetchPriorityFiles(token, repoOwner, repoName, ref, paths, onProgress);
   }
 

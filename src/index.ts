@@ -44,6 +44,34 @@ async function getUserSession(request: Request, env: Env): Promise<UserSession |
   }
 }
 
+function generateCodeVerifier(): string {
+  const array = new Uint8Array(32);
+  crypto.getRandomValues(array);
+  let binary = '';
+  for (let i = 0; i < array.length; i++) {
+    binary += String.fromCharCode(array[i]);
+  }
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
+async function generateCodeChallenge(verifier: string): Promise<string> {
+  const encoder = new TextEncoder();
+  const data = encoder.encode(verifier);
+  const hash = await crypto.subtle.digest('SHA-256', data);
+  const array = new Uint8Array(hash);
+  let binary = '';
+  for (let i = 0; i < array.length; i++) {
+    binary += String.fromCharCode(array[i]);
+  }
+  return btoa(binary)
+    .replace(/\+/g, '-')
+    .replace(/\//g, '_')
+    .replace(/=/g, '');
+}
+
 const PRIORITY_PATTERNS = [
   'package.json',
   'wrangler.toml',
@@ -209,9 +237,34 @@ export default {
         if (!token) {
           return new Response('Missing JWT token', { status: 400 });
         }
+        const jwtSecret = env.JWT_SECRET || 'sentinel-jwt-secret-fallback';
+        let session: UserSession | null = null;
+        try {
+          const isValid = await jwt.verify(token, jwtSecret);
+          if (isValid) {
+            const decoded = jwt.decode(token);
+            session = decoded.payload as UserSession;
+          }
+        } catch (e) {
+          console.error('Vercel connect token verification failed:', e);
+        }
+
+        if (!session) {
+          return new Response('Unauthorized: Invalid JWT token', { status: 401 });
+        }
+
+        const codeVerifier = generateCodeVerifier();
+        const codeChallenge = await generateCodeChallenge(codeVerifier);
+
+        const stateToken = await jwt.sign({
+          session,
+          code_verifier: codeVerifier,
+          exp: Math.floor(Date.now() / 1000) + 15 * 60 // 15 minutes
+        }, jwtSecret, { algorithm: 'HS256' });
+
         const clientId = env.VERCEL_CLIENT_ID || '';
         const redirectUri = env.VERCEL_REDIRECT_URI || `${url.origin}/api/auth/vercel/callback`;
-        const vercelAuthUrl = `https://vercel.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(token)}&response_type=code`;
+        const vercelAuthUrl = `https://vercel.com/oauth/authorize?client_id=${encodeURIComponent(clientId)}&redirect_uri=${encodeURIComponent(redirectUri)}&state=${encodeURIComponent(stateToken)}&response_type=code&code_challenge=${encodeURIComponent(codeChallenge)}&code_challenge_method=S256`;
         return Response.redirect(vercelAuthUrl, 302);
       }
 
@@ -229,14 +282,17 @@ export default {
           return new Response(`Missing code or state parameters. (URL Query: ${url.search})`, { status: 400 });
         }
 
-        // Verify state (GitHub JWT)
+        // Verify state (State JWT containing session and code_verifier)
         const jwtSecret = env.JWT_SECRET || 'sentinel-jwt-secret-fallback';
         let session: UserSession | null = null;
+        let codeVerifier: string | undefined = undefined;
         try {
           const isValid = await jwt.verify(state, jwtSecret);
           if (isValid) {
             const decoded = jwt.decode(state);
-            session = decoded.payload as UserSession;
+            const payload = decoded.payload as any;
+            session = payload.session as UserSession;
+            codeVerifier = payload.code_verifier;
           }
         } catch (e) {
           console.error('Vercel state verification failed:', e);
@@ -248,19 +304,25 @@ export default {
 
         try {
           const currentRedirectUri = env.VERCEL_REDIRECT_URI || `${url.origin}/api/auth/vercel/callback`;
+          const callbackTeamId = url.searchParams.get('teamId') || url.searchParams.get('team_id');
           console.log({
             clientId: env.VERCEL_CLIENT_ID,
             secretPresent: !!env.VERCEL_CLIENT_SECRET,
+            currentRedirectUri,
+            hasCodeVerifier: !!codeVerifier,
+            callbackTeamId
           });
           const vercel = new VercelClient();
           const { access_token, user_id, team_id } = await vercel.exchangeOAuthCode(
             code,
             env.VERCEL_CLIENT_ID || '',
             env.VERCEL_CLIENT_SECRET || '',
-            currentRedirectUri
+            currentRedirectUri,
+            codeVerifier
           );
 
-          await db.upsertVercelConnection(session.login, access_token, team_id);
+          const finalTeamId = team_id || callbackTeamId || null;
+          await db.upsertVercelConnection(session.login, access_token, finalTeamId);
 
           return new Response(`
             <!DOCTYPE html>
@@ -305,12 +367,36 @@ export default {
 
         try {
           const client = new VercelClient(conn.access_token, conn.team_id);
-          const projects = await client.fetchProjects();
-          return new Response(JSON.stringify({ projects, connected: true }), {
+          const { projects, error } = await client.fetchAllProjects();
+          return new Response(JSON.stringify({ projects, error, connected: true }), {
             headers: { 'Content-Type': 'application/json', ...corsHeaders() }
           });
         } catch (e) {
           console.error('Error fetching Vercel projects:', e);
+          return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
+            status: 500,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+      }
+
+      // 1.55 Vercel Disconnect
+      if (path === '/api/auth/vercel/disconnect' && request.method === 'POST') {
+        const session = await getUserSession(request, env);
+        if (!session) {
+          return new Response(JSON.stringify({ error: 'Unauthorized' }), {
+            status: 401,
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        }
+
+        try {
+          await db.deleteVercelConnection(session.login);
+          return new Response(JSON.stringify({ message: 'Disconnected from Vercel' }), {
+            headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+          });
+        } catch (e) {
+          console.error('Error disconnecting Vercel:', e);
           return new Response(JSON.stringify({ error: e instanceof Error ? e.message : String(e) }), {
             status: 500,
             headers: { 'Content-Type': 'application/json', ...corsHeaders() }
@@ -340,7 +426,7 @@ export default {
           });
         }
 
-        const { projectId, projectName } = await request.json() as any;
+        const { projectId, projectName, teamId } = await request.json() as any;
         if (!projectId || !projectName) {
           return new Response(JSON.stringify({ error: 'Missing projectId or projectName' }), {
             status: 400,
@@ -349,6 +435,10 @@ export default {
         }
 
         await db.upsertVercelProject(repo.id, projectId, projectName);
+
+        // Also update team_id in vercel_connections for this user so subsequent background checks run correctly
+        await db.db.prepare('UPDATE vercel_connections SET team_id = ? WHERE user_id = ?')
+          .bind(teamId || null, session.login).run();
 
         // Trigger codebase sync (background routine) to compute Vercel metrics
         ctx.waitUntil(runRepositorySync(owner, name, env, session.accessToken));
@@ -1109,7 +1199,6 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
   const parcle = new ParcleClient(env.PARCLE_API_KEY || null, env.DB);
   const groq = new GroqEngine(env.GROQ_API_KEY || 'dummy_key');
   const repoFullName = `${owner}/${repo}`;
-
   try {
     console.log(`Starting repository sync for ${repoFullName}...`);
     
@@ -1117,24 +1206,35 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     let repoDetails: any = null;
     let repoId = 0;
     let defaultBranch = 'main';
+    let isAppAuth = false;
 
-    if (userAccessToken) {
-      token = userAccessToken;
-      console.log(`Using user OAuth access token for sync of ${repoFullName}`);
-      repoDetails = await github.getRepositoryDetails(token, owner, repo);
-      defaultBranch = repoDetails.default_branch || 'main';
-      repoId = repoDetails.id;
-    } else {
-      if (!env.GITHUB_APP_ID || !env.GITHUB_PRIVATE_KEY) {
-        console.error('GITHUB_APP_ID or GITHUB_PRIVATE_KEY is not defined. Cannot sync.');
-        return;
+    // 1. Try GitHub App Authentication first
+    if (env.GITHUB_APP_ID && env.GITHUB_PRIVATE_KEY) {
+      try {
+        console.log(`Attempting GitHub App authentication for ${repoFullName}...`);
+        const installationId = await github.getRepositoryInstallation(owner, repo);
+        token = await github.getInstallationToken(installationId);
+        repoDetails = await github.getRepositoryDetails(token, owner, repo);
+        defaultBranch = repoDetails.default_branch || 'main';
+        repoId = repoDetails.id;
+        isAppAuth = true;
+        console.log(`Successfully authenticated as GitHub App for ${repoFullName}`);
+      } catch (e) {
+        console.warn(`Failed GitHub App authentication for ${repoFullName}: ${e instanceof Error ? e.message : String(e)}. Falling back to user token.`);
       }
-      // Get installation ID for repo using GitHub App
-      const installationId = await github.getRepositoryInstallation(owner, repo);
-      token = await github.getInstallationToken(installationId);
-      repoDetails = await github.getRepositoryDetails(token, owner, repo);
-      defaultBranch = repoDetails.default_branch || 'main';
-      repoId = repoDetails.id;
+    }
+
+    // 2. Fall back to user OAuth token if App authentication failed or was not configured
+    if (!isAppAuth) {
+      if (userAccessToken) {
+        token = userAccessToken;
+        console.log(`Using user OAuth access token for sync of ${repoFullName}`);
+        repoDetails = await github.getRepositoryDetails(token, owner, repo);
+        defaultBranch = repoDetails.default_branch || 'main';
+        repoId = repoDetails.id;
+      } else {
+        throw new Error('Sentinel GitHub App is not installed on this repository, and no user OAuth access token is available to run the scan.');
+      }
     }
 
     // Register / update repository in D1
@@ -1142,11 +1242,20 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     // Reset repository scores and delete old PR scans to prevent stale displays
     await db.updateRepoScore(repoId, null, null, null);
     await db.db.prepare('DELETE FROM pull_requests WHERE repo_id = ?').bind(repoId).run();
-    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 1/7: Discovering GitHub repository structure...');
+
+    // Logger utility to accumulate logs in scan_message
+    const scanLogs: string[] = [];
+    const logAndStatus = async (message: string, status: 'scanning' | 'completed' | 'failed' = 'scanning') => {
+      console.log(message);
+      scanLogs.push(message);
+      await db.updateRepoScanStatus(repoId, status, scanLogs.join('\n'));
+    };
+
+    await logAndStatus('Stage 1/7: Discovering GitHub repository structure...');
 
     // 3. Fetch a capped, representative set of repository files to calculate baseline score.
     // Groq receives facts derived from these files, not their raw contents.
-    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 2/7: Extracting code facts and dependencies...');
+    await logAndStatus('Stage 2/7: Extracting code facts and dependencies...');
     const files = await github.fetchRepositoryScanFiles(
       token,
       owner,
@@ -1154,13 +1263,19 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       defaultBranch,
       12, // Capped to 12 files to fit within subrequest limits
       45000,
-      async (filePath) => {
-        await db.updateRepoScanStatus(repoId, 'scanning', `Stage 2/7: Analysing ${filePath}...`);
+      async (logMsg) => {
+        await logAndStatus(logMsg);
       }
     );
+
+    if (Object.keys(files).length === 0) {
+      await logAndStatus('Stage 2/7: Error: No repository files could be read from GitHub. Verify content permissions.', 'failed');
+      throw new Error('No repository files could be read from GitHub. Verify content permissions.');
+    }
+
     const facts = extractRepositoryFacts(files);
 
-    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 3/7: Running deterministic rules engine...');
+    await logAndStatus('Stage 3/7: Running deterministic rules engine...');
     const hits = runDeterministicChecks({ files });
     
     // Baseline score calculation
@@ -1179,7 +1294,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       // Find any active Vercel connection
       connection = await db.db.prepare('SELECT * FROM vercel_connections LIMIT 1').first();
       if (connection) {
-        await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 3.5/7: Scanning Vercel deployments and calculating metrics...');
+        await logAndStatus('Stage 3.5/7: Scanning Vercel deployments and calculating metrics...');
         try {
           const vercel = new VercelClient(connection.access_token, connection.team_id);
           deploymentsList = await vercel.fetchDeployments(project.project_id);
@@ -1208,11 +1323,11 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     // Save Baseline PR #0 Scan record in D1 so the dashboard is immediately populated
     const baselinePrId = `${repoFullName}/pull/0`;
     
-    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 4/7: Recalling historical memories from Parcle...');
+    await logAndStatus('Stage 4/7: Recalling historical memories from Parcle...');
     const baselineMemories = await parcle.recallByRepo(repoFullName, 3);
 
     // Query Groq for baseline analysis using compact facts only.
-    await db.updateRepoScanStatus(repoId, 'scanning', 'Stage 5/7: Analyzing codebase architecture with Groq reasoning...');
+    await logAndStatus('Stage 5/7: Analyzing codebase architecture with Groq reasoning...');
     let baselineAnalysis: AnalysisResult;
     try {
       baselineAnalysis = await groq.analyzeBaseline({
@@ -1332,7 +1447,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       console.error(`Failed to create baseline report issue:`, issueErr);
     }
 
-        // Fetch recent commits and backfill them as commit scans in D1 (limit to 3 commits to respect subrequest limits)
+    // Fetch recent commits and backfill them as commit scans in D1 (limit to 3 commits to respect subrequest limits)
     try {
       console.log(`Fetching recent commits for ${repoFullName} to populate commit scan history...`);
       const commits = await github.getRecentCommits(token, owner, repo, 3);
@@ -1348,7 +1463,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
         const commitPrTitle = `Commit [${shortSha}]: ${commitMessage}`;
 
         const progressMessage = `Stage 6/7: Backfilling history - scanning commit [${shortSha}] ("${commitMessage}")...`;
-        await db.updateRepoScanStatus(repoId, 'scanning', progressMessage);
+        await logAndStatus(progressMessage);
         console.log(`Backfilling commit scan ${shortSha} ("${commitMessage}")...`);
 
         try {
@@ -1451,7 +1566,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       const prId = `${repoFullName}/pull/${prNumber}`;
 
       const progressMessage = `Stage 6/7: Backfilling history - scanning PR #${prNumber} ("${prTitle}")...`;
-      await db.updateRepoScanStatus(repoId, 'scanning', progressMessage);
+      await logAndStatus(progressMessage);
       console.log(`Backfilling PR #${prNumber} ("${prTitle}") at SHA ${headSha}...`);
 
       try {
@@ -1535,7 +1650,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
     }
 
     await db.updateRepoScore(repoId, baselineOverallScore, deploymentHealthScore, combinedScore);
-    await db.updateRepoScanStatus(repoId, 'completed', 'Scan completed successfully.');
+    await logAndStatus('Scan completed successfully.', 'completed');
     const duration = Date.now() - startTime;
     console.log(`Repository sync for ${repoFullName} completed successfully. Sync Metrics: Scanned Files: ${facts.scannedFileCount}, Rule Hits: ${hits.length}, Memories Recalled: ${baselineMemories.length}, Duration: ${duration}ms`);
   } catch (err) {

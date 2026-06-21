@@ -256,6 +256,13 @@ export class DbHelper {
     ).bind(userId, accessToken, teamId).run();
   }
 
+  async deleteVercelConnection(userId: string): Promise<void> {
+    if (!this.db) return;
+    await this.db.prepare(
+      'DELETE FROM vercel_connections WHERE user_id = ?'
+    ).bind(userId).run();
+  }
+
   async getVercelProject(repoId: number): Promise<DbVercelProject | null> {
     if (!this.db) return null;
     const res = await this.db.prepare(

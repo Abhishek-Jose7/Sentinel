@@ -2111,207 +2111,362 @@ h1, h2, h3, h4, h5, h6, select, button, input {
 }
 
 body {
-  background: var(--bg-darkest) !important;
-  background-image: radial-gradient(circle, #1d1e27 1.5px, transparent 1.5px) !important;
-  background-size: 20px 20px !important;
-  font-family: 'JetBrains Mono', monospace !important;
-  color: var(--text-normal) !important;
+  background-color: #768491 !important;
+  background-image: none !important;
+  font-family: 'JetBrains Mono', 'Courier New', monospace !important;
+  color: #000000 !important;
+  padding: 0 !important;
+  margin: 0 !important;
 }
 
-/* Enable box shadow custom behavior by replacing the generic box-shadow none override */
+/* Enable retro box shadow and filter behaviors */
 * {
   text-shadow: none !important;
   filter: none !important;
 }
 
-/* Global Neobrutalist styles for containers */
+/* Global Outset raised frame for windows and cards */
 .hud-card, 
-.repo-item, 
-.dimension-card, 
-.risk-item, 
-.memory-item, 
 .terminal-container, 
 .login-box, 
-.modal-box,
-.thought-process-console {
-  border: 2px solid var(--border-hud) !important;
-  box-shadow: 4px 4px 0px 0px rgba(255, 255, 255, 0.12) !important;
+.modal-box {
+  border: 2px solid !important;
+  border-top-color: #FFFFFF !important;
+  border-left-color: #FFFFFF !important;
+  border-right-color: #404040 !important;
+  border-bottom-color: #404040 !important;
+  background-color: #C0C0C0 !important;
   border-radius: 0px !important;
-  background-color: var(--bg-card) !important;
-  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), 
-              box-shadow 0.12s cubic-bezier(0.16, 1, 0.3, 1), 
-              border-color 0.12s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  padding: 16px !important;
+  box-shadow: none !important;
+  color: #000000 !important;
+  transition: none !important;
 }
 
-/* Container Hover Actions - Brutalist Translation */
+/* Eliminate neon glow hovering - elements behave like solid static retro windows */
 .hud-card:hover, 
 .dimension-card:hover,
 .terminal-container:hover,
 .thought-process-console:hover {
-  transform: translate(-3px, -3px) !important;
-  box-shadow: 7px 7px 0px 0px var(--border-hover) !important;
-  border-color: var(--border-hover) !important;
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF !important;
 }
 
-/* Left Sidebar Repo list items */
+/* Retro Window Title Bar */
+.hud-card h3, 
+.thought-hud-card h3, 
+.vercel-deployment-card h3, 
+.verified-findings-card h3, 
+.recommended-actions-card h3,
+.prediction-hud-card h3,
+.code-incidents-section h3,
+.repo-memories-section h3,
+.thought-hud-card summary,
+.terminal-header {
+  background: #C0C0C0 repeating-linear-gradient(to bottom, #808080, #808080 1px, transparent 1px, transparent 4px) !important;
+  color: #000000 !important;
+  padding: 4px 8px !important;
+  font-size: 11px !important;
+  font-weight: bold !important;
+  text-transform: uppercase !important;
+  margin: -16px -16px 12px -16px !important;
+  border-bottom: 2px solid #808080 !important;
+  height: 28px !important;
+  box-sizing: border-box !important;
+  display: flex !important;
+  align-items: center !important;
+  justify-content: space-between !important;
+  letter-spacing: 0px !important;
+}
+
+/* Style the text header label to mask the lines beneath it */
+.hud-card h3 span,
+.thought-hud-card h3 span,
+.vercel-deployment-card h3 span,
+.terminal-title {
+  background: #C0C0C0 !important;
+  padding: 0 6px !important;
+}
+
+/* Left close button box for windows */
+.hud-card h3::before,
+.thought-hud-card h3::before,
+.vercel-deployment-card h3::before,
+.terminal-header::before {
+  content: "" !important;
+  display: inline-block !important;
+  width: 14px !important;
+  height: 14px !important;
+  background: #C0C0C0 !important;
+  border: 1.5px solid !important;
+  border-top-color: #FFFFFF !important;
+  border-left-color: #FFFFFF !important;
+  border-right-color: #808080 !important;
+  border-bottom-color: #808080 !important;
+  margin-right: 8px !important;
+  flex-shrink: 0 !important;
+}
+
+/* Right minimize/collapse control box for windows */
+.hud-card h3::after,
+.thought-hud-card h3::after,
+.vercel-deployment-card h3::after,
+.terminal-header::after {
+  content: "×" !important;
+  display: inline-flex !important;
+  align-items: center !important;
+  justify-content: center !important;
+  width: 14px !important;
+  height: 14px !important;
+  background: #C0C0C0 !important;
+  border: 1.5px solid !important;
+  border-top-color: #FFFFFF !important;
+  border-left-color: #FFFFFF !important;
+  border-right-color: #808080 !important;
+  border-bottom-color: #808080 !important;
+  font-size: 9px !important;
+  font-weight: bold !important;
+  cursor: pointer !important;
+  margin-left: auto !important;
+  flex-shrink: 0 !important;
+}
+
+/* Inset sunken dashboard pane containers */
+.dashboard-pane {
+  background: #D8D8D8 !important;
+  border: 2px solid !important;
+  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  padding: 16px !important;
+  margin: 4px !important;
+  box-shadow: none !important;
+}
+
+.pane-left {
+  background: #D8D8D8 !important;
+}
+
+.pane-right {
+  background: #D0D0D0 !important;
+}
+
+/* Sidebar Styling */
+.sidebar {
+  background: #C0C0C0 !important;
+  border-right: 2px solid !important;
+  border-color: #FFFFFF #808080 #808080 #FFFFFF !important;
+  padding: 16px !important;
+}
+
+.brand {
+  border-bottom: 2px solid #808080 !important;
+  padding-bottom: 12px !important;
+}
+
+.brand-text h1 {
+  color: #000000 !important;
+  font-weight: bold !important;
+  font-size: 16px !important;
+}
+
+/* Sidebar Repository Buttons */
 .repo-item {
-  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.08) !important;
-  margin-bottom: 8px !important;
-  background: var(--bg-darker) !important;
+  border: 2px solid !important;
+  border-top-color: #FFFFFF !important;
+  border-left-color: #FFFFFF !important;
+  border-right-color: #404040 !important;
+  border-bottom-color: #404040 !important;
+  background: #C0C0C0 !important;
+  color: #000000 !important;
+  margin-bottom: 6px !important;
+  border-radius: 0px !important;
+  font-weight: bold !important;
+  padding: 8px 12px !important;
+  box-shadow: none !important;
 }
 
 .repo-item.active {
-  background: var(--bg-hud) !important;
-  border-color: var(--primary) !important;
-  box-shadow: 4px 4px 0px 0px var(--primary) !important;
-  transform: translate(-2px, -2px) !important;
-  border-left: 3px solid var(--primary) !important;
+  border-top-color: #404040 !important;
+  border-left-color: #404040 !important;
+  border-right-color: #FFFFFF !important;
+  border-bottom-color: #FFFFFF !important;
+  background: #D8D8D8 !important;
+  color: #000080 !important;
+  transform: translate(1px, 1px) !important;
+  box-shadow: none !important;
 }
 
 .repo-item:hover:not(.active) {
-  background: var(--bg-hud) !important;
-  border-color: var(--primary-hover) !important;
-  box-shadow: 4px 4px 0px 0px var(--primary-hover) !important;
-  transform: translate(-2px, -2px) !important;
+  background: #E0E0E0 !important;
 }
 
-/* Score HUD Card - Brutalist Highlight */
+/* Score display and HUD cards */
 .score-hud-card {
-  border-left: 5px solid var(--primary) !important;
-  border-color: var(--border-hud) !important;
-  box-shadow: 4px 4px 0px 0px var(--primary) !important;
+  border: 2px solid !important;
+  border-top-color: #FFFFFF !important;
+  border-left-color: #FFFFFF !important;
+  border-right-color: #404040 !important;
+  border-bottom-color: #404040 !important;
+  box-shadow: none !important;
+  background: #C0C0C0 !important;
 }
-.score-hud-card:hover {
-  transform: translate(-3px, -3px) !important;
-  box-shadow: 7px 7px 0px 0px var(--primary) !important;
-  border-color: var(--primary) !important;
+
+.score-display-flat {
+  font-size: 32px !important;
+  font-weight: bold !important;
+  color: #000080 !important;
 }
 
 .score-explanation-report {
-  background: var(--bg-darkest) !important;
-  border: 2px dashed var(--border-hud) !important;
-  padding: 12px !important;
-  margin-top: 12px !important;
+  background: #FFFFFF !important;
+  border: 2px solid !important;
+  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  padding: 10px !important;
+  margin-top: 10px !important;
+  color: #000000 !important;
 }
 
-/* Risk Items - Brutalist Left Border Focus */
-.risk-item {
-  border-left: 5px solid var(--error) !important;
-  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.08) !important;
+/* Yellow Chat Bubble retro assistant box for AI Predictions */
+.prediction-hud-card {
+  background: #FFE680 !important;
+  border: 2px solid #000000 !important;
+  color: #000000 !important;
+  box-shadow: 4px 4px 0px 0px #404040 !important;
 }
 
-.risk-item:hover {
-  border-left-color: var(--primary) !important;
-  border-color: var(--primary) !important;
-  box-shadow: 6px 6px 0px 0px var(--primary) !important;
-  transform: translate(-3px, -3px) !important;
-  background: rgba(0, 255, 102, 0.01) !important;
+.prediction-hud-card h3 {
+  background: #FFE680 !important;
+  border-bottom: 2px solid #000000 !important;
+  color: #000000 !important;
 }
 
-/* Memories & Recall Ledger */
+.prediction-hud-card h4, 
+.prediction-hud-card p,
+.prediction-hud-card span {
+  color: #000000 !important;
+}
+
+/* Details and Lists */
+.dimension-card, 
+.risk-item, 
 .memory-item {
-  border: 1.5px solid var(--border-hud) !important;
-  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.08) !important;
-}
-.memory-item:hover {
-  transform: translate(-2px, -2px) !important;
-  box-shadow: 5px 5px 0px 0px var(--accent-pro) !important;
-  border-color: var(--accent-pro) !important;
+  background: #FFFFFF !important;
+  border: 2px solid !important;
+  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  margin-bottom: 6px !important;
+  padding: 10px !important;
+  box-shadow: none !important;
+  border-radius: 0px !important;
+  color: #000000 !important;
 }
 
-/* Chunky Brutalist Buttons */
+.dimension-card:hover,
+.risk-item:hover,
+.memory-item:hover {
+  transform: none !important;
+  box-shadow: none !important;
+  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+}
+
+/* Chunky Outset Bevel Buttons */
 .btn {
-  border: 2px solid var(--border-hud) !important;
-  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.15) !important;
-  font-weight: 800 !important;
-  letter-spacing: 0.08em !important;
-  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1) !important;
-  background: var(--bg-darker) !important;
+  border: 2px solid !important;
+  border-top-color: #FFFFFF !important;
+  border-left-color: #FFFFFF !important;
+  border-right-color: #404040 !important;
+  border-bottom-color: #404040 !important;
+  background: #C0C0C0 !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  box-shadow: none !important;
+  cursor: pointer !important;
+  transition: none !important;
+  padding: 6px 12px !important;
 }
 
 .btn:hover:not(:disabled) {
-  background: var(--bg-hud) !important;
-  border-color: var(--primary) !important;
-  box-shadow: 5px 5px 0px 0px var(--primary) !important;
-  transform: translate(-2px, -2px) !important;
-  color: #FFFFFF !important;
+  background: #D8D8D8 !important;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF !important;
+}
+
+.btn:active:not(:disabled),
+.btn.active {
+  border-top-color: #404040 !important;
+  border-left-color: #404040 !important;
+  border-right-color: #FFFFFF !important;
+  border-bottom-color: #FFFFFF !important;
+  background: #B0B0B0 !important;
+  transform: translate(1px, 1px) !important;
 }
 
 .btn-action {
-  background: var(--primary) !important;
+  background: #C0C0C0 !important;
   color: #000000 !important;
-  border-color: #000000 !important;
-  box-shadow: 3px 3px 0px 0px #FFFFFF !important;
+  border-color: #FFFFFF #404040 #404040 #FFFFFF !important;
 }
 
 .btn-action:hover:not(:disabled) {
-  background: var(--primary-hover) !important;
-  border-color: #000000 !important;
-  box-shadow: 5px 5px 0px 0px #FFFFFF !important;
-  transform: translate(-2px, -2px) !important;
-  color: #000000 !important;
+  background: #D0D0D0 !important;
 }
 
 .btn-pro {
-  background: var(--accent-pro) !important;
-  color: #000000 !important;
-  border-color: #000000 !important;
-  box-shadow: 3px 3px 0px 0px #FFFFFF !important;
+  background: #C0C0C0 !important;
+  color: #000080 !important;
 }
 
-.btn-pro:hover:not(:disabled) {
-  background: #FFE033 !important;
-  border-color: #000000 !important;
-  box-shadow: 5px 5px 0px 0px #FFFFFF !important;
-  transform: translate(-2px, -2px) !important;
-  color: #000000 !important;
+/* Inset text consoles & logs */
+.thought-process-console,
+.terminal-body {
+  background: #000000 !important;
+  border: 2px solid !important;
+  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  color: #00FF66 !important;
 }
 
-/* Modals & Login Boxes - Chunky Outlines */
-.login-box, .modal-box {
-  border: 3px solid var(--border-hud) !important;
-  box-shadow: 8px 8px 0px 0px var(--primary) !important;
-  background: var(--bg-hud) !important;
-}
-
-/* Inputs and Selector Fields */
+/* Inputs, dropdowns, and selects */
 .pr-select, select, input[type="text"] {
-  border: 2px solid var(--border-hud) !important;
-  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.08) !important;
-  background: var(--bg-darkest) !important;
-  font-weight: 600 !important;
-  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1) !important;
-}
-
-.pr-select:focus, select:focus, input[type="text"]:focus {
+  border: 2px solid !important;
+  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  background: #FFFFFF !important;
+  color: #000000 !important;
+  font-weight: bold !important;
+  border-radius: 0px !important;
+  box-shadow: none !important;
   outline: none !important;
-  border-color: var(--primary) !important;
-  box-shadow: 4px 4px 0px 0px var(--primary) !important;
+  padding: 4px 8px !important;
 }
 
-/* Scrollbars - Solid Stark Styling */
+/* Retro Custom Scrollbars */
 ::-webkit-scrollbar {
-  width: 8px !important;
-  height: 8px !important;
+  width: 16px !important;
+  height: 16px !important;
 }
 ::-webkit-scrollbar-track {
-  background: var(--bg-darkest) !important;
-  border-left: 2px solid var(--border-hud) !important;
+  background-color: #D8D8D8 !important;
+  background-image: repeating-conic-gradient(#C0C0C0 0% 25%, #E5E5E5 0% 50%) !important;
+  background-size: 4px 4px !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: var(--border-hud) !important;
-  border: 2px solid var(--bg-darkest) !important;
+  background: #C0C0C0 !important;
+  border: 2px solid !important;
+  border-top-color: #FFFFFF !important;
+  border-left-color: #FFFFFF !important;
+  border-right-color: #404040 !important;
+  border-bottom-color: #404040 !important;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: var(--primary) !important;
+  background: #D0D0D0 !important;
 }
 
-/* Dimension Progress Bars - Structured Brutalist Frames */
+/* Structured beveled progress bar track and fills */
 .dim-bar-wrapper {
-  background: var(--bg-darkest) !important;
-  height: 8px !important;
-  border: 1.5px solid var(--border-hud) !important;
-  margin: 8px 0 !important;
+  background: #FFFFFF !important;
+  border: 2px solid !important;
+  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  height: 12px !important;
+}
+.dim-bar {
+  background: #000080 !important; /* retro active dark blue progress */
 }
 
 /* Collapsible sidebar overrides to support Stark Flat HUD theme */

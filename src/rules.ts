@@ -90,7 +90,7 @@ export function extractRepositoryFacts(files: Record<string, string>): Repositor
     hasEnvValidation: hasAny(ENV_VALIDATION_PATTERNS, allText),
     hasTests: pathMatches(paths, /(^|\/)(__tests__|tests?|spec)\//i) || pathMatches(paths, /\.(test|spec)\.[jt]sx?$/i) || /"test"\s*:/.test(packageJsonText),
     hasMonitoring: hasAny(MONITORING_PATTERNS, allText),
-    hasCiConfig: pathMatches(paths, /^\.github\/workflows\//i) || pathMatches(paths, /(^|\/)(circleci|buildkite|gitlab-ci|jenkinsfile)/i),
+    hasCiConfig: pathMatches(paths, /(^|\/)\.github\/workflows\//i) || pathMatches(paths, /(^|\/)(circleci|buildkite|gitlab-ci|jenkinsfile)/i),
     hasDockerfile: pathMatches(paths, /(^|\/)Dockerfile$/i) || pathMatches(paths, /docker-compose/i),
     hasPackageLock: pathMatches(paths, /(^|\/)(package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i),
     usesDatabase: /DATABASE_URL|postgres|mysql|sqlite|prisma|drizzle|D1Database/i.test(allText),

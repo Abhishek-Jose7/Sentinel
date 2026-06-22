@@ -9,6 +9,7 @@ import { GitHubClient, verifyWebhookSignature, buildPRComment, buildPatternMatch
 export interface Env {
   DB: any; // D1Database
   GROQ_API_KEY?: string;
+  GROQ_MODEL?: string;
   PARCLE_API_KEY?: string;
   GITHUB_APP_ID?: string;
   GITHUB_PRIVATE_KEY?: string; // PEM format
@@ -80,6 +81,7 @@ const PRIORITY_PATTERNS = [
   'wrangler.toml',
   'wrangler.json',
   'tsconfig.json',
+  '.github/workflows/deploy.yml',
   'src/index.ts',
   'src/index.js',
   'src/server.ts',
@@ -98,6 +100,26 @@ function corsHeaders() {
   };
 }
 
+// In-memory rate limiting map for basic protection
+const rateLimitMap = new Map<string, { count: number; resetTime: number }>();
+
+function checkRateLimit(ip: string, limit = 100, windowMs = 60000): boolean {
+  const now = Date.now();
+  const record = rateLimitMap.get(ip);
+  
+  if (!record || now > record.resetTime) {
+    rateLimitMap.set(ip, { count: 1, resetTime: now + windowMs });
+    return true;
+  }
+  
+  if (record.count >= limit) {
+    return false;
+  }
+  
+  record.count++;
+  return true;
+}
+
 export default {
   async fetch(request: Request, env: Env, ctx: ExecutionContext): Promise<Response> {
     const url = new URL(request.url);
@@ -108,7 +130,23 @@ export default {
       return new Response(null, { headers: corsHeaders() });
     }
 
+    // Basic rate limiting middleware
+    const ip = request.headers.get('CF-Connecting-IP') || '127.0.0.1';
+    if (!checkRateLimit(ip)) {
+      return new Response(JSON.stringify({ error: 'Rate limit exceeded' }), {
+        status: 429,
+        headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+      });
+    }
+
     try {
+      // Health check endpoint
+      if (path === '/health' && request.method === 'GET') {
+        return new Response(JSON.stringify({ status: 'healthy' }), {
+          headers: { 'Content-Type': 'application/json', ...corsHeaders() }
+        });
+      }
+
       // 1. Webhook Handler
       if (path === '/webhook' && request.method === 'POST') {
         return await handleWebhook(request, env, ctx);
@@ -968,7 +1006,7 @@ async function runAuditLoop(payload: any, env: Env) {
   const db = new DbHelper(env.DB);
   const github = new GitHubClient(env.GITHUB_APP_ID, env.GITHUB_PRIVATE_KEY);
   const parcle = new ParcleClient(env.PARCLE_API_KEY || null, env.DB);
-  const groq = new GroqEngine(env.GROQ_API_KEY || 'dummy_key');
+  const groq = new GroqEngine(env.GROQ_API_KEY || 'dummy_key', env.GROQ_MODEL);
 
   let checkRunId = 0;
   let token = '';
@@ -1296,7 +1334,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
   const db = new DbHelper(env.DB);
   const github = new GitHubClient(env.GITHUB_APP_ID || '', env.GITHUB_PRIVATE_KEY || '');
   const parcle = new ParcleClient(env.PARCLE_API_KEY || null, env.DB);
-  const groq = new GroqEngine(env.GROQ_API_KEY || 'dummy_key');
+  const groq = new GroqEngine(env.GROQ_API_KEY || 'dummy_key', env.GROQ_MODEL);
   const repoFullName = `${owner}/${repo}`;
   try {
     console.log(`Starting repository sync for ${repoFullName}...`);
@@ -1361,7 +1399,7 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
       repo,
       defaultBranch,
       12, // Capped to 12 files to fit within subrequest limits
-      45000,
+      100000,
       async (logMsg) => {
         await logAndStatus(logMsg);
       }

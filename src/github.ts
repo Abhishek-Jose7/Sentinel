@@ -249,11 +249,11 @@ export class GitHubClient {
     }
     return /\.(ts|tsx|js|jsx|mjs|cjs|json|toml|ya?ml|md|sql|env\.example|dockerfile)$/i.test(path)
       || /(^|\/)(Dockerfile|Jenkinsfile|package-lock\.json|pnpm-lock\.yaml|yarn\.lock)$/i.test(path)
-      || /^\.github\/workflows\//i.test(path);
+      || /(^|\/)\.github\/workflows\//i.test(path);
   }
 
   private scanPriority(path: string): number {
-    if (/package\.json$|wrangler\.(json|toml)$|tsconfig\.json$|Dockerfile$|\.github\/workflows\//i.test(path)) return 100;
+    if (/package\.json$|wrangler\.(json|toml)$|tsconfig\.json$|Dockerfile$|((^|\/)\.github\/workflows\/)/i.test(path)) return 100;
     if (/(src|app|pages|server|api)\//i.test(path)) return 80;
     if (/(test|spec|__tests__)/i.test(path)) return 65;
     if (/\.(md|sql|ya?ml|toml)$/i.test(path)) return 45;

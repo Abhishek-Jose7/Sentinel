@@ -263,3 +263,260 @@ export function applyPenalties(
 
   return { dimensions, penaltiesByDimension };
 }
+
+export function cleanVersion(ver: string): string {
+  // Strip leading specifiers like ^, ~, >=, <=, etc.
+  let cleaned = ver.trim().replace(/^[\^~>=<]+/g, '');
+  if (!cleaned || cleaned === '*' || cleaned === 'latest') {
+    return '0.0.0';
+  }
+  // Split by whitespace, logical OR (||), or hyphen ranges (-)
+  cleaned = cleaned.split(/\s*\|\|\s*/)[0];
+  cleaned = cleaned.split(/\s+or\s+/i)[0];
+  cleaned = cleaned.split(/\s*-\s*/)[0];
+  cleaned = cleaned.trim();
+  
+  // Extract first semver-like pattern (e.g. 1.2.3)
+  const match = cleaned.match(/\d+\.\d+\.\d+/);
+  return match ? match[0] : cleaned;
+}
+
+export async function checkPackageVulnerabilities(
+  packageJsonContent: string,
+  packageLockContent?: string
+): Promise<RuleHit[]> {
+  const hits: RuleHit[] = [];
+  try {
+    let pkgJson: any;
+    try {
+      pkgJson = JSON.parse(packageJsonContent);
+    } catch (e) {
+      console.error('Failed to parse package.json content:', e);
+      return hits;
+    }
+
+    const dependencies = {
+      ...(pkgJson.dependencies || {}),
+      ...(pkgJson.devDependencies || {})
+    };
+
+    if (Object.keys(dependencies).length === 0) {
+      return hits;
+    }
+
+    // Try parsing package-lock.json to find exact versions
+    const exactVersions: Record<string, string> = {};
+    if (packageLockContent) {
+      try {
+        const lockJson = JSON.parse(packageLockContent);
+        // package-lock v2/v3 has packages property
+        if (lockJson.packages) {
+          for (const [key, value] of Object.entries(lockJson.packages)) {
+            if (key.startsWith('node_modules/')) {
+              const name = key.replace(/^node_modules\//, '');
+              if (value && typeof value === 'object' && (value as any).version) {
+                exactVersions[name] = (value as any).version;
+              }
+            }
+          }
+        }
+        // package-lock v1 / fallback has dependencies property
+        if (lockJson.dependencies) {
+          for (const [name, value] of Object.entries(lockJson.dependencies)) {
+            if (value && typeof value === 'object' && (value as any).version) {
+              exactVersions[name] = (value as any).version;
+            }
+          }
+        }
+      } catch (e) {
+        console.error('Failed to parse package-lock.json content:', e);
+      }
+    }
+
+    // Prepare OSV.dev batch query
+    const queries = [];
+    const packageList: Array<{ name: string; version: string }> = [];
+
+    for (const [name, spec] of Object.entries(dependencies)) {
+      if (typeof spec !== 'string') continue;
+      const exactVer = exactVersions[name] || cleanVersion(spec);
+      queries.push({
+        package: {
+          name,
+          ecosystem: 'npm'
+        },
+        version: exactVer
+      });
+      packageList.push({ name, version: exactVer });
+    }
+
+    if (queries.length === 0) {
+      return hits;
+    }
+
+    // Make batch POST request to OSV.dev
+    const response = await fetch('https://api.osv.dev/v1/querybatch', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'Accept': 'application/json'
+      },
+      body: JSON.stringify({ queries })
+    });
+
+    if (!response.ok) {
+      console.error(`OSV.dev querybatch failed: ${response.status} ${await response.text()}`);
+      return hits;
+    }
+
+    const data = await response.json() as any;
+    const results = data.results || [];
+
+    for (let i = 0; i < results.length; i++) {
+      const result = results[i];
+      const pkg = packageList[i];
+      if (result && result.vulns && result.vulns.length > 0) {
+        const vulnIds = result.vulns.map((v: any) => v.id).join(', ');
+        hits.push({
+          id: `vulnerable-package-${pkg.name}`,
+          dimension: 'security',
+          penalty: 10,
+          title: `Vulnerable dependency: ${pkg.name}`,
+          description: `Package ${pkg.name}@${pkg.version} has active vulnerabilities: ${vulnIds}. Please upgrade to a secure version.`
+        });
+      }
+    }
+  } catch (err) {
+    console.error('Error during package vulnerability check:', err);
+  }
+
+  return hits;
+}
+
+export interface InlineViolation {
+  path: string;
+  line: number;
+  ruleId: string;
+  title: string;
+  description: string;
+  suggestion?: string;
+}
+
+export function scanDiffForInlineViolations(diff: string): InlineViolation[] {
+  const violations: InlineViolation[] = [];
+  if (!diff) return violations;
+
+  const lines = diff.split('\n');
+  let currentFile = '';
+  let currentLine = 0;
+
+  // Regex patterns for secrets
+  const SECRET_PATTERNS = [
+    {
+      regex: /(password|passwd|api_key|client_secret|private_key|auth_token|access_token|credential)\s*[:=]\s*['"`]([a-zA-Z0-9_\-\.\~\+\/]{12,})['"`]/i,
+      message: 'Avoid committing hardcoded credentials, API keys, or private tokens in code. Use environment variables or a secrets manager.',
+      suggestion: '// Use environment variables instead\n// const api_key = process.env.API_KEY;'
+    },
+    {
+      regex: /-----BEGIN (RSA |EC |PGP )?PRIVATE KEY-----/,
+      message: 'Private key detected. Do not commit cryptographic private keys to source control.',
+    },
+    {
+      regex: /(mongodb(\+srv)?|postgres(ql)?|mysql):\/\/[^:]+:[^@]+@/,
+      message: 'Database connection string containing credentials detected. Store database URLs in environment variables.',
+    },
+    {
+      regex: /xox[bapr]-[0-9]{12}-[a-zA-Z0-9]{24}/,
+      message: 'Potential Slack token detected. Revoke immediately and move to environment variables.',
+    },
+    {
+      regex: /AKIA[0-9A-Z]{16}/,
+      message: 'Potential AWS Access Key ID detected. Use AWS IAM roles or environment credentials.',
+    },
+    {
+      regex: /sk_live_[0-9a-zA-Z]{24}/,
+      message: 'Potential Stripe live API key detected. Revoke immediately and use sandbox keys or environment variables.',
+    },
+    {
+      regex: /ghp_[0-9a-zA-Z]{36}/,
+      message: 'Potential GitHub Personal Access Token detected. Revoke immediately and use GitHub Actions secret injection or App tokens.',
+    }
+  ];
+
+  for (const line of lines) {
+    // 1. Detect file start
+    // e.g. diff --git a/src/index.ts b/src/index.ts
+    const fileMatch = line.match(/^diff --git a\/(.*?) b\/(.*?)$/);
+    if (fileMatch) {
+      currentFile = fileMatch[2];
+      currentLine = 0;
+      continue;
+    }
+
+    // 2. Detect hunk header
+    // e.g. @@ -10,6 +10,7 @@
+    const hunkMatch = line.match(/^@@ -\d+(?:,\d+)? \+(\d+)(?:,\d+)? @@/);
+    if (hunkMatch) {
+      currentLine = parseInt(hunkMatch[1]);
+      continue;
+    }
+
+    // If we don't have a current file or line number tracking hasn't started yet, skip
+    if (!currentFile || currentLine === 0) {
+      continue;
+    }
+
+    // 3. Process diff lines
+    if (line.startsWith('+') && !line.startsWith('+++')) {
+      const content = line.substring(1);
+
+      // Check eval usage
+      if (/\beval\s*\(/.test(content)) {
+        violations.push({
+          path: currentFile,
+          line: currentLine,
+          ruleId: 'eval-usage',
+          title: 'Eval usage detected',
+          description: 'Avoid using eval() as it exposes the application to code injection vulnerabilities.',
+          suggestion: '```suggestion\n// Use JSON.parse or structured logic instead of eval\n```'
+        });
+      }
+
+      // Check sync FS usage
+      if (/\b(read|write|append)FileSync\b/.test(content)) {
+        violations.push({
+          path: currentFile,
+          line: currentLine,
+          ruleId: 'sync-fs-usage',
+          title: 'Sync filesystem usage',
+          description: 'Sync filesystem methods block the single-threaded event loop and degrade worker performance.',
+          suggestion: '```suggestion\n// Use asynchronous filesystem methods\n```'
+        });
+      }
+
+      // Check for secrets
+      for (const pattern of SECRET_PATTERNS) {
+        if (pattern.regex.test(content)) {
+          violations.push({
+            path: currentFile,
+            line: currentLine,
+            ruleId: 'hardcoded-secrets',
+            title: 'Potential hardcoded secrets',
+            description: pattern.message,
+            suggestion: pattern.suggestion ? `\`\`\`suggestion\n${pattern.suggestion}\n\`\`\`` : undefined
+          });
+          break; // Avoid duplicate secret matches on the same line
+        }
+      }
+
+      currentLine++;
+    } else if (line.startsWith('-') && !line.startsWith('---')) {
+      // Deleted line, do not increment currentLine
+    } else {
+      // Unchanged line (context line)
+      currentLine++;
+    }
+  }
+
+  return violations;
+}

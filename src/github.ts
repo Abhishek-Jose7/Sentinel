@@ -564,6 +564,38 @@ ${summary}
       console.error(`Failed to create baseline issue: ${res.status} ${await res.text()}`);
     }
   }
+
+  // Group and post code-level comments directly on PR lines with suggestions
+  async postPRReview(
+    token: string,
+    repoOwner: string,
+    repoName: string,
+    prNumber: number,
+    commitId: string,
+    comments: Array<{ path: string; line: number; side: 'RIGHT'; body: string }>
+  ): Promise<void> {
+    if (comments.length === 0) return;
+    const res = await fetch(`https://api.github.com/repos/${repoOwner}/${repoName}/pulls/${prNumber}/reviews`, {
+      method: 'POST',
+      headers: {
+        'Authorization': `token ${token}`,
+        'Accept': 'application/vnd.github.v3+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'Sentinel-App'
+      },
+      body: JSON.stringify({
+        commit_id: commitId,
+        event: 'COMMENT',
+        comments
+      })
+    });
+
+    if (!res.ok) {
+      console.error(`Failed to post PR review comments: ${res.status} ${await res.text()}`);
+    } else {
+      console.log(`Successfully posted PR review with ${comments.length} comments.`);
+    }
+  }
 }
 // Generates the pattern match Markdown section
 export function buildPatternMatchSection(

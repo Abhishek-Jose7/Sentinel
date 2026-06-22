@@ -1,6 +1,6 @@
 import jwt from '@tsndr/cloudflare-worker-jwt';
 import { DbHelper } from './db';
-import { runDeterministicChecks, applyPenalties, extractRepositoryFacts, scoreFromFacts, calculateOverallScore } from './rules';
+import { runDeterministicChecks, applyPenalties, extractRepositoryFacts, scoreFromFacts, calculateOverallScore, checkPackageVulnerabilities, scanDiffForInlineViolations } from './rules';
 import { VercelClient } from './vercel';
 import { ParcleClient } from './parcle';
 import { GroqEngine, AnalysisResult } from './groq';
@@ -74,6 +74,9 @@ async function generateCodeChallenge(verifier: string): Promise<string> {
 
 const PRIORITY_PATTERNS = [
   'package.json',
+  'package-lock.json',
+  'pnpm-lock.yaml',
+  'yarn.lock',
   'wrangler.toml',
   'wrangler.json',
   'tsconfig.json',
@@ -981,6 +984,14 @@ async function runAuditLoop(payload: any, env: Env) {
     // 5. Run Deterministic checks
     const hits = runDeterministicChecks({ files, diff });
 
+    // Run Outdated Package CVE Scan if package.json is available
+    const packageJsonContent = files['package.json'] || Object.entries(files).find(([path]) => path.endsWith('/package.json'))?.[1];
+    if (packageJsonContent) {
+      const packageLockContent = files['package-lock.json'] || Object.entries(files).find(([path]) => path.endsWith('/package-lock.json'))?.[1];
+      const vulnHits = await checkPackageVulnerabilities(packageJsonContent, packageLockContent);
+      hits.push(...vulnHits);
+    }
+
     // 6. Memory Recall loop: query memories in Parcle by pattern ID for each check hit (limited to 1 to minimize subrequests)
     const patternMatches = await Promise.all(
       hits.map(h => parcle.recallByPattern(h.id, repoFullName, 1))
@@ -1124,8 +1135,79 @@ async function runAuditLoop(payload: any, env: Env) {
     // Post to PR
     await github.postPRComment(token, repoOwner, repoName, prNumber, commentMarkdown);
 
-    // Complete Check Run
-    const conclusion = overallScore >= 70 ? 'success' : 'failure';
+    // Gather inline review comments
+    const inlineComments: Array<{ path: string; line: number; side: 'RIGHT'; body: string }> = [];
+
+    // A. Gather comments from diff line-by-line checks
+    const diffViolations = scanDiffForInlineViolations(diff);
+    for (const viol of diffViolations) {
+      inlineComments.push({
+        path: viol.path,
+        line: viol.line,
+        side: 'RIGHT',
+        body: `**[${viol.title}]**\n${viol.description}${viol.suggestion ? `\n\n${viol.suggestion}` : ''}`
+      });
+    }
+
+    // B. Gather comments from vulnerable package.json entries
+    if (packageJsonContent) {
+      const pkgJsonPath = files['package.json'] ? 'package.json' : (Object.keys(files).find(p => p.endsWith('package.json')) || 'package.json');
+      const findPackageLine = (content: string, pkgName: string): number => {
+        const lines = content.split('\n');
+        for (let i = 0; i < lines.length; i++) {
+          if (lines[i].includes(`"${pkgName}"`)) {
+            return i + 1;
+          }
+        }
+        return 1;
+      };
+
+      for (const hit of hits) {
+        if (hit.id.startsWith('vulnerable-package-')) {
+          const pkgName = hit.id.replace('vulnerable-package-', '');
+          const lineNum = findPackageLine(packageJsonContent, pkgName);
+          inlineComments.push({
+            path: pkgJsonPath,
+            line: lineNum,
+            side: 'RIGHT',
+            body: `**[Vulnerable Dependency]**\n${hit.description}`
+          });
+        }
+      }
+    }
+
+    // C. Gather comments from AI-predicted risks with filename:line pattern
+    for (const risk of analysis.risks) {
+      if (risk.location) {
+        const match = risk.location.match(/^([^:]+):(\d+)$/);
+        if (match) {
+          const path = match[1].trim();
+          const line = parseInt(match[2]);
+          inlineComments.push({
+            path,
+            line,
+            side: 'RIGHT',
+            body: `⚠️ **[Sentinel Predict: ${risk.severity.toUpperCase()} Risk] ${risk.title}**\n${risk.why}`
+          });
+        }
+      }
+    }
+
+    // Post the inline review comments as a single PR review
+    if (inlineComments.length > 0) {
+      try {
+        await github.postPRReview(token, repoOwner, repoName, prNumber, headSha, inlineComments);
+      } catch (err) {
+        console.error('Failed to post inline PR review comments:', err);
+      }
+    }
+
+    // Complete Check Run (force failure if hardcoded secrets are found)
+    let conclusion: 'success' | 'failure' = overallScore >= 70 ? 'success' : 'failure';
+    if (hits.some(h => h.id === 'hardcoded-secrets')) {
+      conclusion = 'failure';
+    }
+
     await github.updateCheckRun(token, repoOwner, repoName, checkRunId, 'completed', conclusion, {
       title: `Sentinel PR Audit Score: ${overallScore}/100`,
       summary: analysis.summary,
@@ -1277,6 +1359,15 @@ async function runRepositorySync(owner: string, repo: string, env: Env, userAcce
 
     await logAndStatus('Stage 3/7: Running deterministic rules engine...');
     const hits = runDeterministicChecks({ files });
+
+    // Run Outdated Package CVE Scan if package.json is available
+    const packageJsonContent = files['package.json'] || Object.entries(files).find(([path]) => path.endsWith('/package.json'))?.[1];
+    if (packageJsonContent) {
+      await logAndStatus('Stage 3.1/7: Scanning package.json for known vulnerabilities...');
+      const packageLockContent = files['package-lock.json'] || Object.entries(files).find(([path]) => path.endsWith('/package-lock.json'))?.[1];
+      const vulnHits = await checkPackageVulnerabilities(packageJsonContent, packageLockContent);
+      hits.push(...vulnHits);
+    }
     
     // Baseline score calculation
     const deterministicDimensions = scoreFromFacts(hits);

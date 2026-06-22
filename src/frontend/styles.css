@@ -2111,7 +2111,7 @@ h1, h2, h3, h4, h5, h6, select, button, input {
 }
 
 body {
-  background-color: #768491 !important;
+  background-color: #5E6C79 !important; /* One shade darker slate gray desktop */
   background-image: none !important;
   font-family: 'JetBrains Mono', 'Courier New', monospace !important;
   color: #000000 !important;
@@ -2125,7 +2125,7 @@ body {
   filter: none !important;
 }
 
-/* Global Outset raised frame for windows and cards */
+/* Global Outset raised frame for windows and cards (one shade darker gray base) */
 .hud-card, 
 .terminal-container, 
 .login-box, 
@@ -2133,9 +2133,9 @@ body {
   border: 2px solid !important;
   border-top-color: #FFFFFF !important;
   border-left-color: #FFFFFF !important;
-  border-right-color: #404040 !important;
-  border-bottom-color: #404040 !important;
-  background-color: #C0C0C0 !important;
+  border-right-color: #333333 !important;
+  border-bottom-color: #333333 !important;
+  background-color: #A0A0A0 !important; /* Darker Window Base Gray */
   border-radius: 0px !important;
   padding: 16px !important;
   box-shadow: none !important;
@@ -2143,17 +2143,54 @@ body {
   transition: none !important;
 }
 
-/* Eliminate neon glow hovering - elements behave like solid static retro windows */
+/* Force black/dark text inside outset retro windows and cards */
+.hud-card,
+.login-box,
+.modal-box,
+.summary-details h4,
+.summary-content-text,
+#analysis-summary,
+#verified-findings-list li,
+#recommended-fixes-list li,
+.checklist-items li,
+.vercel-deployment-card p,
+#vercel-connected-view p,
+#vercel-disconnected-view p,
+.vercel-metrics-grid *,
+.user-badgeContainer *,
+.user-name,
+.repo-name {
+  color: #000000 !important;
+}
+
+/* Sidebar Section Headers */
+.sidebar-section h2 {
+  color: #222222 !important; /* Darker color against light sidebar */
+  font-weight: 800 !important;
+}
+
+/* User Badge Container */
+.user-badge {
+  border-top: 1.5px dashed #404040 !important;
+}
+.user-badge * {
+  color: #000000 !important;
+}
+.user-role {
+  color: #000080 !important;
+}
+
+/* Eliminate neon glow hovering */
 .hud-card:hover, 
 .dimension-card:hover,
 .terminal-container:hover,
 .thought-process-console:hover {
   transform: none !important;
   box-shadow: none !important;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF !important;
+  border-color: #FFFFFF #333333 #333333 #FFFFFF !important;
 }
 
-/* Retro Window Title Bar */
+/* Retro Window Title Bar (one shade darker striped header) */
 .hud-card h3, 
 .thought-hud-card h3, 
 .vercel-deployment-card h3, 
@@ -2164,14 +2201,14 @@ body {
 .repo-memories-section h3,
 .thought-hud-card summary,
 .terminal-header {
-  background: #C0C0C0 repeating-linear-gradient(to bottom, #808080, #808080 1px, transparent 1px, transparent 4px) !important;
+  background: #A0A0A0 repeating-linear-gradient(to bottom, #606060, #606060 1px, transparent 1px, transparent 4px) !important;
   color: #000000 !important;
   padding: 4px 8px !important;
   font-size: 11px !important;
   font-weight: bold !important;
   text-transform: uppercase !important;
   margin: -16px -16px 12px -16px !important;
-  border-bottom: 2px solid #808080 !important;
+  border-bottom: 2px solid #555555 !important;
   height: 28px !important;
   box-sizing: border-box !important;
   display: flex !important;
@@ -2185,7 +2222,7 @@ body {
 .thought-hud-card h3 span,
 .vercel-deployment-card h3 span,
 .terminal-title {
-  background: #C0C0C0 !important;
+  background: #A0A0A0 !important;
   padding: 0 6px !important;
 }
 
@@ -2198,12 +2235,12 @@ body {
   display: inline-block !important;
   width: 14px !important;
   height: 14px !important;
-  background: #C0C0C0 !important;
+  background: #A0A0A0 !important;
   border: 1.5px solid !important;
   border-top-color: #FFFFFF !important;
   border-left-color: #FFFFFF !important;
-  border-right-color: #808080 !important;
-  border-bottom-color: #808080 !important;
+  border-right-color: #606060 !important;
+  border-bottom-color: #606060 !important;
   margin-right: 8px !important;
   flex-shrink: 0 !important;
 }
@@ -2219,12 +2256,12 @@ body {
   justify-content: center !important;
   width: 14px !important;
   height: 14px !important;
-  background: #C0C0C0 !important;
+  background: #A0A0A0 !important;
   border: 1.5px solid !important;
   border-top-color: #FFFFFF !important;
   border-left-color: #FFFFFF !important;
-  border-right-color: #808080 !important;
-  border-bottom-color: #808080 !important;
+  border-right-color: #606060 !important;
+  border-bottom-color: #606060 !important;
   font-size: 9px !important;
   font-weight: bold !important;
   cursor: pointer !important;
@@ -2232,34 +2269,34 @@ body {
   flex-shrink: 0 !important;
 }
 
-/* Inset sunken dashboard pane containers */
+/* Inset sunken dashboard pane containers (one shade darker gray) */
 .dashboard-pane {
-  background: #D8D8D8 !important;
+  background: #B8B8B8 !important; /* Darker Pane Base Gray */
   border: 2px solid !important;
-  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  border-color: #333333 #FFFFFF #FFFFFF #333333 !important;
   padding: 16px !important;
   margin: 4px !important;
   box-shadow: none !important;
 }
 
 .pane-left {
-  background: #D8D8D8 !important;
+  background: #B8B8B8 !important;
 }
 
 .pane-right {
-  background: #D0D0D0 !important;
+  background: #B0B0B0 !important;
 }
 
-/* Sidebar Styling */
+/* Sidebar Styling (one shade darker gray) */
 .sidebar {
-  background: #C0C0C0 !important;
+  background: #A0A0A0 !important;
   border-right: 2px solid !important;
-  border-color: #FFFFFF #808080 #808080 #FFFFFF !important;
+  border-color: #FFFFFF #555555 #555555 #FFFFFF !important;
   padding: 16px !important;
 }
 
 .brand {
-  border-bottom: 2px solid #808080 !important;
+  border-bottom: 2px solid #555555 !important;
   padding-bottom: 12px !important;
 }
 
@@ -2268,15 +2305,18 @@ body {
   font-weight: bold !important;
   font-size: 16px !important;
 }
+.brand-text span {
+  color: #000080 !important; /* Dark blue subtext */
+}
 
 /* Sidebar Repository Buttons */
 .repo-item {
   border: 2px solid !important;
   border-top-color: #FFFFFF !important;
   border-left-color: #FFFFFF !important;
-  border-right-color: #404040 !important;
-  border-bottom-color: #404040 !important;
-  background: #C0C0C0 !important;
+  border-right-color: #333333 !important;
+  border-bottom-color: #333333 !important;
+  background: #A0A0A0 !important;
   color: #000000 !important;
   margin-bottom: 6px !important;
   border-radius: 0px !important;
@@ -2286,18 +2326,18 @@ body {
 }
 
 .repo-item.active {
-  border-top-color: #404040 !important;
-  border-left-color: #404040 !important;
+  border-top-color: #333333 !important;
+  border-left-color: #333333 !important;
   border-right-color: #FFFFFF !important;
   border-bottom-color: #FFFFFF !important;
-  background: #D8D8D8 !important;
+  background: #B8B8B8 !important;
   color: #000080 !important;
   transform: translate(1px, 1px) !important;
   box-shadow: none !important;
 }
 
 .repo-item:hover:not(.active) {
-  background: #E0E0E0 !important;
+  background: #B0B0B0 !important;
 }
 
 /* Score display and HUD cards */
@@ -2305,10 +2345,10 @@ body {
   border: 2px solid !important;
   border-top-color: #FFFFFF !important;
   border-left-color: #FFFFFF !important;
-  border-right-color: #404040 !important;
-  border-bottom-color: #404040 !important;
+  border-right-color: #333333 !important;
+  border-bottom-color: #333333 !important;
   box-shadow: none !important;
-  background: #C0C0C0 !important;
+  background: #A0A0A0 !important;
 }
 
 .score-display-flat {
@@ -2320,10 +2360,21 @@ body {
 .score-explanation-report {
   background: #FFFFFF !important;
   border: 2px solid !important;
-  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  border-color: #333333 #FFFFFF #FFFFFF #333333 !important;
   padding: 10px !important;
   margin-top: 10px !important;
   color: #000000 !important;
+}
+
+.sub-score-item span,
+.sub-score-item {
+  color: #000000 !important;
+  background-color: #FFFFFF !important;
+}
+#repo-health-value,
+#deploy-health-value {
+  color: #000080 !important;
+  font-weight: bold !important;
 }
 
 /* Yellow Chat Bubble retro assistant box for AI Predictions */
@@ -2352,7 +2403,7 @@ body {
 .memory-item {
   background: #FFFFFF !important;
   border: 2px solid !important;
-  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  border-color: #333333 #FFFFFF #FFFFFF #333333 !important;
   margin-bottom: 6px !important;
   padding: 10px !important;
   box-shadow: none !important;
@@ -2365,7 +2416,30 @@ body {
 .memory-item:hover {
   transform: none !important;
   box-shadow: none !important;
-  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  border-color: #333333 #FFFFFF #FFFFFF #333333 !important;
+}
+
+/* Risk Badges */
+.risk-item * {
+  color: #000000 !important;
+}
+.risk-loc {
+  color: #444444 !important;
+}
+.risk-badge.critical {
+  color: #FFFFFF !important;
+  background-color: #800000 !important;
+  border-color: #800000 !important;
+}
+.risk-badge.warning {
+  color: #FFFFFF !important;
+  background-color: #808000 !important;
+  border-color: #808000 !important;
+}
+.risk-badge.info {
+  color: #FFFFFF !important;
+  background-color: #000080 !important;
+  border-color: #000080 !important;
 }
 
 /* Chunky Outset Bevel Buttons */
@@ -2373,9 +2447,9 @@ body {
   border: 2px solid !important;
   border-top-color: #FFFFFF !important;
   border-left-color: #FFFFFF !important;
-  border-right-color: #404040 !important;
-  border-bottom-color: #404040 !important;
-  background: #C0C0C0 !important;
+  border-right-color: #333333 !important;
+  border-bottom-color: #333333 !important;
+  background: #A0A0A0 !important;
   color: #000000 !important;
   font-weight: bold !important;
   box-shadow: none !important;
@@ -2385,48 +2459,90 @@ body {
 }
 
 .btn:hover:not(:disabled) {
-  background: #D8D8D8 !important;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF !important;
+  background: #B8B8B8 !important;
+  border-color: #FFFFFF #333333 #333333 #FFFFFF !important;
 }
 
 .btn:active:not(:disabled),
 .btn.active {
-  border-top-color: #404040 !important;
-  border-left-color: #404040 !important;
+  border-top-color: #333333 !important;
+  border-left-color: #333333 !important;
   border-right-color: #FFFFFF !important;
   border-bottom-color: #FFFFFF !important;
-  background: #B0B0B0 !important;
+  background: #888888 !important;
   transform: translate(1px, 1px) !important;
 }
 
 .btn-action {
-  background: #C0C0C0 !important;
+  background: #A0A0A0 !important;
   color: #000000 !important;
-  border-color: #FFFFFF #404040 #404040 #FFFFFF !important;
+  border-color: #FFFFFF #333333 #333333 #FFFFFF !important;
 }
 
 .btn-action:hover:not(:disabled) {
-  background: #D0D0D0 !important;
+  background: #B0B0B0 !important;
 }
 
 .btn-pro {
-  background: #C0C0C0 !important;
+  background: #A0A0A0 !important;
   color: #000080 !important;
 }
 
-/* Inset text consoles & logs */
+/* Explicit contrast rules for the dark top header panel */
+.hud-header, 
+.hud-header *, 
+#current-repo-title {
+  background-color: #000000 !important;
+  color: #FFFFFF !important;
+}
+.hud-tag {
+  color: #00FF66 !important;
+}
+.hud-header .btn {
+  background-color: #222222 !important;
+  border-color: #555555 !important;
+  color: #FFFFFF !important;
+}
+.hud-header .btn:hover {
+  background-color: #444444 !important;
+  border-color: #FFFFFF !important;
+}
+
+/* Inset text consoles & logs (force high-contrast terminal text styles) */
 .thought-process-console,
 .terminal-body {
   background: #000000 !important;
   border: 2px solid !important;
-  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
-  color: #00FF66 !important;
+  border-color: #333333 #FFFFFF #FFFFFF #333333 !important;
+}
+
+.terminal-body, 
+.thought-process-console,
+.thought-process-content,
+.terminal-log-feed,
+.log-line,
+.log-line *,
+.terminal-title {
+  color: #00FF66 !important; /* phosphor green */
+  background-color: #000000 !important;
+}
+.log-line.timestamp {
+  color: #00AA44 !important;
+}
+.log-line.warning {
+  color: #FFCC00 !important;
+}
+.log-line.error {
+  color: #FF3366 !important;
+}
+.log-line.success {
+  color: #33FF88 !important;
 }
 
 /* Inputs, dropdowns, and selects */
 .pr-select, select, input[type="text"] {
   border: 2px solid !important;
-  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  border-color: #333333 #FFFFFF #FFFFFF #333333 !important;
   background: #FFFFFF !important;
   color: #000000 !important;
   font-weight: bold !important;
@@ -2442,27 +2558,27 @@ body {
   height: 16px !important;
 }
 ::-webkit-scrollbar-track {
-  background-color: #D8D8D8 !important;
-  background-image: repeating-conic-gradient(#C0C0C0 0% 25%, #E5E5E5 0% 50%) !important;
+  background-color: #B8B8B8 !important;
+  background-image: repeating-conic-gradient(#A0A0A0 0% 25%, #C0C0C0 0% 50%) !important;
   background-size: 4px 4px !important;
 }
 ::-webkit-scrollbar-thumb {
-  background: #C0C0C0 !important;
+  background: #A0A0A0 !important;
   border: 2px solid !important;
   border-top-color: #FFFFFF !important;
   border-left-color: #FFFFFF !important;
-  border-right-color: #404040 !important;
-  border-bottom-color: #404040 !important;
+  border-right-color: #333333 !important;
+  border-bottom-color: #333333 !important;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #D0D0D0 !important;
+  background: #B0B0B0 !important;
 }
 
 /* Structured beveled progress bar track and fills */
 .dim-bar-wrapper {
   background: #FFFFFF !important;
   border: 2px solid !important;
-  border-color: #404040 #FFFFFF #FFFFFF #404040 !important;
+  border-color: #333333 #FFFFFF #FFFFFF #333333 !important;
   height: 12px !important;
 }
 .dim-bar {
@@ -2510,4 +2626,3 @@ body {
   margin-top: 4px !important;
   transform: rotate(180deg) !important;
 }
-

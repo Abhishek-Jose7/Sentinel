@@ -894,6 +894,14 @@ export default {
         });
       }
 
+      if (path === '/shield.png') {
+        const shieldBase64 = await fetchDashboardShieldBase64();
+        const bytes = Uint8Array.from(atob(shieldBase64), c => c.charCodeAt(0));
+        return new Response(bytes, {
+          headers: { 'Content-Type': 'image/png' }
+        });
+      }
+
       return new Response('Not Found', { status: 404 });
     } catch (err) {
       console.error('Request execution error:', err);
@@ -1270,6 +1278,15 @@ async function fetchDashboardJs(): Promise<string> {
     return assets.JS;
   } catch (e) {
     return 'console.error("Dashboard script missing");';
+  }
+}
+
+async function fetchDashboardShieldBase64(): Promise<string> {
+  try {
+    const assets = await import('./frontend_assets');
+    return assets.SHIELD_BASE64;
+  } catch (e) {
+    return '';
   }
 }
 

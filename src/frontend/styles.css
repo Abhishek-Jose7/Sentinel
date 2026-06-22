@@ -196,7 +196,15 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .logo-icon {
-  font-size: 26px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.logo-icon img {
+  width: 32px;
+  height: auto;
+  display: block;
   filter: drop-shadow(0 0 10px var(--primary-glow));
   animation: logoGlow 4s infinite alternate;
 }
@@ -1154,9 +1162,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .empty-logo-hex {
-  font-size: 54px;
   margin-bottom: 20px;
   filter: drop-shadow(0 0 12px var(--primary-glow));
+}
+
+.empty-logo-hex img {
+  width: 80px;
+  height: auto;
+  display: block;
 }
 
 .empty-dashboard h2 {
@@ -1415,9 +1428,14 @@ h1, h2, h3, h4, h5, h6 {
 }
 
 .logo-shield {
-  font-size: 54px;
   margin-bottom: 20px;
   filter: drop-shadow(0 0 12px var(--primary-glow));
+}
+
+.logo-shield img {
+  width: 80px;
+  height: auto;
+  display: block;
 }
 
 .login-box h2 {
@@ -1573,7 +1591,7 @@ h1, h2, h3, h4, h5, h6, select, button, input {
   font-size: 16px !important;
 }
 
-.logo-icon {
+.logo-icon, .logo-icon img {
   animation: none !important;
   filter: none !important;
 }

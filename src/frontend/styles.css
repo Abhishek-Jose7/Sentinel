@@ -1735,10 +1735,10 @@ h1, h2, h3, h4, h5, h6, select, button, input {
   font-size: 12px !important;
 }
 
-/* Two-pane content grid layout */
+/* Three-column content grid layout */
 .dashboard-panes-wrapper {
   display: grid !important;
-  grid-template-columns: 420px minmax(0, 1fr) !important;
+  grid-template-columns: 340px 1fr 1fr !important;
   flex-grow: 1 !important;
   flex-shrink: 1 !important;
   flex-basis: 0% !important;
@@ -1746,25 +1746,32 @@ h1, h2, h3, h4, h5, h6, select, button, input {
   overflow: hidden !important;
 }
 
-.dashboard-pane {
+.dashboard-column {
   overflow-y: auto !important;
   padding: 20px !important;
   display: flex !important;
   flex-direction: column !important;
   gap: 20px !important;
+  height: 100% !important;
+  box-sizing: border-box !important;
 }
 
-.dashboard-pane > * {
+.dashboard-column > * {
   flex-shrink: 0 !important;
 }
 
-.pane-left {
-  border-right: 1px solid var(--border-hud) !important;
+.col-left {
+  border-right: 2px solid var(--border-hud) !important;
   background: var(--bg-darker) !important;
 }
 
-.pane-right {
+.col-center {
+  border-right: 2px solid var(--border-hud) !important;
   background: var(--bg-darkest) !important;
+}
+
+.col-right {
+  background: var(--bg-darker) !important;
 }
 
 .hud-card {

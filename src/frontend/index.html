@@ -105,11 +105,11 @@
       </section>
 
       <!-- Two-Pane Grid Layout Wrapper -->
+      <!-- Three-Column Grid Layout Wrapper -->
       <div class="dashboard-panes-wrapper">
         
-        <!-- Left Pane: Verify, Scores, Actions -->
-        <div class="dashboard-pane pane-left">
-          
+        <!-- Column 1: Core Posture & Scores -->
+        <div class="dashboard-column col-left">
           <!-- Stark Executive Score Card -->
           <div class="hud-card score-hud-card">
             <h3>Overall Readiness HUD</h3>
@@ -144,75 +144,16 @@
             </div>
           </div>
           
-          <!-- Executive Summary (Hidden by default but needed to satisfy DOM anchors) -->
-          <div class="hud-card summary-hud-card" style="display: none;">
-            <h3>Audit Findings Summary</h3>
-            <div class="summary-details">
-              <h4 id="selected-pr-title">--</h4>
-              <div class="summary-content-text" id="analysis-summary">--</div>
-            </div>
-          </div>
-
           <!-- Verify Layer: Dimension Postures -->
-          <section class="hud-section dimensions-section">
+          <section class="hud-section dimensions-section" style="margin-top: 20px;">
             <h3>Verify — Dimension Postures</h3>
             <div class="dimensions-grid" id="dimensions-container">
               <!-- Dynamically populated dimensions -->
             </div>
           </section>
 
-          <!-- Key Verified Findings (facts extracted) -->
-          <div class="hud-card verified-findings-card" style="margin-top: 20px;">
-            <h3>Verify — Key Verified Findings</h3>
-            <div class="findings-details" style="margin-top: 10px;">
-              <ul id="verified-findings-list" class="checklist-items" style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;">
-                <!-- Dynamically populated findings -->
-                <li style="color: var(--text-muted); font-size: 13px;">No verified findings recorded. Perform a scan.</li>
-              </ul>
-            </div>
-          </div>
-
-          <!-- Recommended Actions Section -->
-          <div class="hud-card recommended-actions-card" style="margin-top: 20px;">
-            <h3>🛠️ Recommended Actions</h3>
-            <div style="margin-top: 10px;">
-              <ol id="recommended-fixes-list" style="padding-left: 20px; margin: 0; color: #fff; font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 8px;">
-                <li style="color: var(--text-muted);">No actions recommended yet. Perform a scan.</li>
-              </ol>
-            </div>
-          </div>
-
-        </div>
-
-        <!-- Right Pane: Predictions, Vercel deployments, Memories -->
-        <div class="dashboard-pane pane-right">
-          
-          <!-- Predict Layer: Executive Risk Predictions -->
-          <div class="hud-card prediction-hud-card" style="border: 1px solid rgba(239, 68, 68, 0.15);">
-            <div class="prediction-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-hud); padding-bottom: 10px; margin-bottom: 12px;">
-              <h3 style="color: #EF4444;">🔮 Predict — Likely Failure Point</h3>
-              <div style="text-align: right;">
-                <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; display: block; text-transform: uppercase;">Confidence</span>
-                <span id="predict-confidence-badge" style="font-size: 12px; font-weight: 700; color: #EF4444;">--%</span>
-              </div>
-            </div>
-            <div class="prediction-body">
-              <h4 id="predict-failure-point" style="font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 10px; line-height: 1.4;">--</h4>
-              
-              <div class="predict-meta-item" style="margin-bottom: 12px;">
-                <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; display: block; text-transform: uppercase; margin-bottom: 4px;">Why Sentinel Believes It</span>
-                <p id="predict-failure-why" style="font-size: 13px; color: var(--text-bright); line-height: 1.5; margin: 0;">--</p>
-              </div>
-
-              <div class="predict-meta-item">
-                <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; display: block; text-transform: uppercase; margin-bottom: 4px;">Estimated Impact</span>
-                <p id="predict-failure-impact" style="font-size: 13px; color: var(--text-bright); line-height: 1.5; margin: 0;">--</p>
-              </div>
-            </div>
-          </div>
-
           <!-- Vercel Deployment Panel -->
-          <div class="hud-card vercel-deployment-card" id="vercel-deployment-panel" style="display: block;">
+          <div class="hud-card vercel-deployment-card" id="vercel-deployment-panel" style="display: block; margin-top: 20px;">
             <div style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-hud); padding-bottom: 10px; margin-bottom: 12px;">
               <h3>▲ Vercel Production Snapshot</h3>
               <span class="badge" id="vercel-status-badge" style="background: rgba(255, 255, 255, 0.05); color: var(--text-muted);">NOT CONNECTED</span>
@@ -253,10 +194,34 @@
               <button class="btn btn-action btn-block" id="btn-connect-vercel-body">▲ Connect Vercel Account</button>
             </div>
           </div>
+        </div>
+
+        <!-- Column 2: Audit Logs & Findings -->
+        <div class="dashboard-column col-center">
+          <!-- Key Verified Findings (facts extracted) -->
+          <div class="hud-card verified-findings-card">
+            <h3>Verify — Key Verified Findings</h3>
+            <div class="findings-details" style="margin-top: 10px;">
+              <ul id="verified-findings-list" class="checklist-items" style="list-style: none; padding: 0; margin: 0; display: flex; flex-direction: column; gap: 8px;">
+                <!-- Dynamically populated findings -->
+                <li style="color: var(--text-muted); font-size: 13px;">No verified findings recorded. Perform a scan.</li>
+              </ul>
+            </div>
+          </div>
+
+          <!-- Recommended Actions Section -->
+          <div class="hud-card recommended-actions-card" style="margin-top: 20px;">
+            <h3>🛠️ Recommended Actions</h3>
+            <div style="margin-top: 10px;">
+              <ol id="recommended-fixes-list" style="padding-left: 20px; margin: 0; color: #fff; font-size: 13px; line-height: 1.6; display: flex; flex-direction: column; gap: 8px;">
+                <li style="color: var(--text-muted);">No actions recommended yet. Perform a scan.</li>
+              </ol>
+            </div>
+          </div>
 
           <!-- Incidents Pattern Matches -->
-          <section class="hud-section code-incidents-section">
-            <div class="section-title-bar">
+          <section class="hud-section code-incidents-section" style="margin-top: 20px;">
+            <div class="section-title-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
               <h3>🧠 Recall — Similar Incident Patterns</h3>
               <span class="badge badge-memory" id="memory-lock-badge">Pro Locked</span>
             </div>
@@ -266,10 +231,37 @@
               </div>
             </div>
           </section>
+        </div>
+
+        <!-- Column 3: Predictions & Intelligent Recall -->
+        <div class="dashboard-column col-right">
+          <!-- Predict Layer: Executive Risk Predictions -->
+          <div class="hud-card prediction-hud-card" style="border: 2px solid var(--error) !important;">
+            <div class="prediction-header" style="display: flex; justify-content: space-between; align-items: center; border-bottom: 1px solid var(--border-hud); padding-bottom: 10px; margin-bottom: 12px;">
+              <h3 style="color: #EF4444;">🔮 Predict — Likely Failure Point</h3>
+              <div style="text-align: right;">
+                <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; display: block; text-transform: uppercase;">Confidence</span>
+                <span id="predict-confidence-badge" style="font-size: 12px; font-weight: 700; color: #EF4444;">--%</span>
+              </div>
+            </div>
+            <div class="prediction-body">
+              <h4 id="predict-failure-point" style="font-size: 14px; font-weight: 700; color: #fff; margin-bottom: 10px; line-height: 1.4;">--</h4>
+              
+              <div class="predict-meta-item" style="margin-bottom: 12px;">
+                <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; display: block; text-transform: uppercase; margin-bottom: 4px;">Why Sentinel Believes It</span>
+                <p id="predict-failure-why" style="font-size: 13px; color: var(--text-bright); line-height: 1.5; margin: 0;">--</p>
+              </div>
+
+              <div class="predict-meta-item">
+                <span style="font-size: 9px; color: var(--text-muted); font-weight: 600; display: block; text-transform: uppercase; margin-bottom: 4px;">Estimated Impact</span>
+                <p id="predict-failure-impact" style="font-size: 13px; color: var(--text-bright); line-height: 1.5; margin: 0;">--</p>
+              </div>
+            </div>
+          </div>
 
           <!-- Long-Term Parcle Memory Bank -->
-          <section class="hud-section repo-memories-section">
-            <div class="section-title-bar">
+          <section class="hud-section repo-memories-section" style="margin-top: 20px;">
+            <div class="section-title-bar" style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 12px;">
               <h3>📦 Long-Term Parcle Memory Bank (Recall Ledger)</h3>
               <span class="badge badge-memory active" id="repo-memory-count-badge">0 Stored Memories</span>
             </div>
@@ -294,6 +286,14 @@
             </details>
           </div>
 
+          <!-- Executive Summary (Hidden by default but needed to satisfy DOM anchors) -->
+          <div class="hud-card summary-hud-card" id="summary-hud-card" style="display: none; margin-top: 20px;">
+            <h3>Audit Findings Summary</h3>
+            <div class="summary-details">
+              <h4 id="selected-pr-title">--</h4>
+              <div class="summary-content-text" id="analysis-summary">--</div>
+            </div>
+          </div>
         </div>
 
       </div>

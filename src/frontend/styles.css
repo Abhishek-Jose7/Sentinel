@@ -2112,52 +2112,206 @@ h1, h2, h3, h4, h5, h6, select, button, input {
 
 body {
   background: var(--bg-darkest) !important;
-  background-image: radial-gradient(circle, #191a22 1px, transparent 1px) !important;
-  background-size: 16px 16px !important;
+  background-image: radial-gradient(circle, #1d1e27 1.5px, transparent 1.5px) !important;
+  background-size: 20px 20px !important;
   font-family: 'JetBrains Mono', monospace !important;
   color: var(--text-normal) !important;
+}
+
+/* Enable box shadow custom behavior by replacing the generic box-shadow none override */
+* {
+  text-shadow: none !important;
+  filter: none !important;
+}
+
+/* Global Neobrutalist styles for containers */
+.hud-card, 
+.repo-item, 
+.dimension-card, 
+.risk-item, 
+.memory-item, 
+.terminal-container, 
+.login-box, 
+.modal-box,
+.thought-process-console {
+  border: 2px solid var(--border-hud) !important;
+  box-shadow: 4px 4px 0px 0px rgba(255, 255, 255, 0.12) !important;
+  border-radius: 0px !important;
+  background-color: var(--bg-card) !important;
+  transition: transform 0.12s cubic-bezier(0.16, 1, 0.3, 1), 
+              box-shadow 0.12s cubic-bezier(0.16, 1, 0.3, 1), 
+              border-color 0.12s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+/* Container Hover Actions - Brutalist Translation */
+.hud-card:hover, 
+.dimension-card:hover,
+.terminal-container:hover,
+.thought-process-console:hover {
+  transform: translate(-3px, -3px) !important;
+  box-shadow: 7px 7px 0px 0px var(--border-hover) !important;
+  border-color: var(--border-hover) !important;
+}
+
+/* Left Sidebar Repo list items */
+.repo-item {
+  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.08) !important;
+  margin-bottom: 8px !important;
+  background: var(--bg-darker) !important;
 }
 
 .repo-item.active {
   background: var(--bg-hud) !important;
   border-color: var(--primary) !important;
+  box-shadow: 4px 4px 0px 0px var(--primary) !important;
+  transform: translate(-2px, -2px) !important;
   border-left: 3px solid var(--primary) !important;
 }
 
 .repo-item:hover:not(.active) {
-  background: rgba(0, 255, 102, 0.02) !important;
-  border-color: var(--border-hover) !important;
+  background: var(--bg-hud) !important;
+  border-color: var(--primary-hover) !important;
+  box-shadow: 4px 4px 0px 0px var(--primary-hover) !important;
+  transform: translate(-2px, -2px) !important;
 }
 
+/* Score HUD Card - Brutalist Highlight */
 .score-hud-card {
-  border-left: 4px solid var(--primary) !important;
+  border-left: 5px solid var(--primary) !important;
+  border-color: var(--border-hud) !important;
+  box-shadow: 4px 4px 0px 0px var(--primary) !important;
+}
+.score-hud-card:hover {
+  transform: translate(-3px, -3px) !important;
+  box-shadow: 7px 7px 0px 0px var(--primary) !important;
+  border-color: var(--primary) !important;
 }
 
 .score-explanation-report {
   background: var(--bg-darkest) !important;
-  border: 1px dashed var(--border-hud) !important;
+  border: 2px dashed var(--border-hud) !important;
   padding: 12px !important;
   margin-top: 12px !important;
 }
 
+/* Risk Items - Brutalist Left Border Focus */
 .risk-item {
-  border-left: 3px solid var(--border-hud) !important;
+  border-left: 5px solid var(--error) !important;
+  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.08) !important;
 }
 
 .risk-item:hover {
   border-left-color: var(--primary) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 6px 6px 0px 0px var(--primary) !important;
+  transform: translate(-3px, -3px) !important;
   background: rgba(0, 255, 102, 0.01) !important;
 }
 
-.thought-process-console {
-  border: 1px solid var(--border-hud) !important;
+/* Memories & Recall Ledger */
+.memory-item {
+  border: 1.5px solid var(--border-hud) !important;
+  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.08) !important;
+}
+.memory-item:hover {
+  transform: translate(-2px, -2px) !important;
+  box-shadow: 5px 5px 0px 0px var(--accent-pro) !important;
+  border-color: var(--accent-pro) !important;
 }
 
-/* Remove all glow animations and shadow effects globally */
-* {
-  text-shadow: none !important;
-  box-shadow: none !important;
-  filter: none !important;
+/* Chunky Brutalist Buttons */
+.btn {
+  border: 2px solid var(--border-hud) !important;
+  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.15) !important;
+  font-weight: 800 !important;
+  letter-spacing: 0.08em !important;
+  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1) !important;
+  background: var(--bg-darker) !important;
+}
+
+.btn:hover:not(:disabled) {
+  background: var(--bg-hud) !important;
+  border-color: var(--primary) !important;
+  box-shadow: 5px 5px 0px 0px var(--primary) !important;
+  transform: translate(-2px, -2px) !important;
+  color: #FFFFFF !important;
+}
+
+.btn-action {
+  background: var(--primary) !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+  box-shadow: 3px 3px 0px 0px #FFFFFF !important;
+}
+
+.btn-action:hover:not(:disabled) {
+  background: var(--primary-hover) !important;
+  border-color: #000000 !important;
+  box-shadow: 5px 5px 0px 0px #FFFFFF !important;
+  transform: translate(-2px, -2px) !important;
+  color: #000000 !important;
+}
+
+.btn-pro {
+  background: var(--accent-pro) !important;
+  color: #000000 !important;
+  border-color: #000000 !important;
+  box-shadow: 3px 3px 0px 0px #FFFFFF !important;
+}
+
+.btn-pro:hover:not(:disabled) {
+  background: #FFE033 !important;
+  border-color: #000000 !important;
+  box-shadow: 5px 5px 0px 0px #FFFFFF !important;
+  transform: translate(-2px, -2px) !important;
+  color: #000000 !important;
+}
+
+/* Modals & Login Boxes - Chunky Outlines */
+.login-box, .modal-box {
+  border: 3px solid var(--border-hud) !important;
+  box-shadow: 8px 8px 0px 0px var(--primary) !important;
+  background: var(--bg-hud) !important;
+}
+
+/* Inputs and Selector Fields */
+.pr-select, select, input[type="text"] {
+  border: 2px solid var(--border-hud) !important;
+  box-shadow: 3px 3px 0px 0px rgba(255, 255, 255, 0.08) !important;
+  background: var(--bg-darkest) !important;
+  font-weight: 600 !important;
+  transition: all 0.12s cubic-bezier(0.16, 1, 0.3, 1) !important;
+}
+
+.pr-select:focus, select:focus, input[type="text"]:focus {
+  outline: none !important;
+  border-color: var(--primary) !important;
+  box-shadow: 4px 4px 0px 0px var(--primary) !important;
+}
+
+/* Scrollbars - Solid Stark Styling */
+::-webkit-scrollbar {
+  width: 8px !important;
+  height: 8px !important;
+}
+::-webkit-scrollbar-track {
+  background: var(--bg-darkest) !important;
+  border-left: 2px solid var(--border-hud) !important;
+}
+::-webkit-scrollbar-thumb {
+  background: var(--border-hud) !important;
+  border: 2px solid var(--bg-darkest) !important;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: var(--primary) !important;
+}
+
+/* Dimension Progress Bars - Structured Brutalist Frames */
+.dim-bar-wrapper {
+  background: var(--bg-darkest) !important;
+  height: 8px !important;
+  border: 1.5px solid var(--border-hud) !important;
+  margin: 8px 0 !important;
 }
 
 /* Collapsible sidebar overrides to support Stark Flat HUD theme */

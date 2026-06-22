@@ -2371,6 +2371,9 @@ body {
   color: #000000 !important;
   background-color: #FFFFFF !important;
 }
+.sub-score-item {
+  gap: 12px !important;
+}
 #repo-health-value,
 #deploy-health-value {
   color: #000080 !important;
@@ -2625,4 +2628,66 @@ body {
   margin-left: 0 !important;
   margin-top: 4px !important;
   transform: rotate(180deg) !important;
+}
+
+/* Contrast overrides for elements inside light white/grey cards */
+.dimension-card .dim-name,
+.dimension-card .dim-score {
+  color: #000000 !important;
+}
+.dimension-card .note-hit {
+  color: #800000 !important; /* High contrast dark red warnings */
+}
+.dimension-card .note-none {
+  color: #555555 !important; /* High contrast dark grey verified notes */
+}
+
+/* Memories & Recall Incidents panel text contrast */
+.memories-panel,
+.repo-memories-list,
+.memory-match-item,
+.memory-match-header,
+.memory-match-header *,
+.memory-match-text {
+  color: #000000 !important;
+}
+.memory-match-header strong {
+  color: #000080 !important; /* High contrast dark blue */
+}
+
+/* Color contrast overrides for white-on-grey items */
+#last-scan-time {
+  color: #000000 !important;
+}
+#score-value {
+  color: #000080 !important; /* High contrast dark blue readiness score */
+}
+
+/* High contrast, opposite-color text selections for visibility and accessibility */
+::selection {
+  background-color: #000000 !important;
+  color: #FFFFFF !important;
+}
+
+/* For dark-background sections, use the opposite selection style */
+.terminal-body ::selection,
+.terminal-body::selection,
+.thought-process-console ::selection,
+.thought-process-console::selection,
+.thought-process-content ::selection,
+.thought-process-content::selection,
+.terminal-log-feed ::selection,
+.terminal-log-feed::selection,
+.log-line ::selection,
+.log-line::selection,
+.log-line * ::selection,
+.terminal-title ::selection,
+.terminal-title::selection,
+.hud-header ::selection,
+.hud-header::selection,
+.hud-header * ::selection,
+#current-repo-title ::selection,
+#current-repo-title::selection {
+  background-color: #FFFFFF !important;
+  color: #000000 !important;
 }
